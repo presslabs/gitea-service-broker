@@ -1,12 +1,16 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG              ?= controller:latest
+BINDIR           ?= $(CURDIR)/bin
 
-all: test manager
+all: vendor manager
 
 # Run tests
-test: generate fmt vet manifests
-	go test ./pkg/... ./cmd/... -coverprofile cover.out
+test:
+	$(BINDIR)/ginkgo \
+		--randomizeAllSpecs --randomizeSuites --failOnPending \
+		--cover --coverprofile cover.out --trace --race -v \
+		./pkg/... ./cmd/...
 
 # Build manager binary
 manager: generate fmt vet
@@ -42,7 +46,7 @@ generate:
 	go generate ./pkg/... ./cmd/...
 
 # Build the docker image
-docker-build: test
+docker-build: vendor
 	docker build . -t ${IMG}
 	@echo "updating kustomize image patch file for manager resource"
 	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
@@ -50,3 +54,8 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+dependencies:
+	test -d $(BINDIR) || mkdir $(BINDIR)
+	GOBIN=$(BINDIR) go get github.com/onsi/ginkgo
+	GOBIN=$(BINDIR) go get github.com/onsi/gomega

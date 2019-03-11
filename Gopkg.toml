@@ -1,3 +1,10 @@
+required = [
+    "sigs.k8s.io/controller-tools/cmd/controller-gen", # for crd/rbac generation
+    "k8s.io/code-generator/cmd/deepcopy-gen", # for go generate
+    "github.com/onsi/ginkgo", # for test framework
+    "github.com/onsi/gomega", # for test matchers
+]
+
 [prune]
   go-tests = true
   unused-packages = true
@@ -9,6 +16,14 @@
 [[constraint]]
   name="github.com/presslabs/controller-util"
   version="v0.1.10"
+
+[[override]]
+  name="github.com/onsi/ginkgo"
+  version="v1.7.0"
+
+[[override]]
+  name="github.com/onsi/gomega"
+  version="v1.4.3"
 
 [[override]]
   name="sigs.k8s.io/controller-runtime"
@@ -33,3 +48,8 @@
 [[override]]
   name="k8s.io/client-go"
   version="kubernetes-1.13.3"
+
+[[override]]
+  name = "gopkg.in/fsnotify.v1"
+  source = "https://github.com/fsnotify/fsnotify.git"
+  version="v1.4.7"

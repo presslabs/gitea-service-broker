@@ -24,6 +24,7 @@ var sharedPlan = brokerapi.ServicePlan{
 
 var planList = []brokerapi.ServicePlan{sharedPlan}
 
+// Services returns a list of brokered services
 func (giteaServiceBroker *GiteaServiceBroker) Services(ctx context.Context) ([]brokerapi.Service, error) {
 	return []brokerapi.Service{
 		{
