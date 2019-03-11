@@ -22,9 +22,9 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
+	logf "github.com/presslabs/controller-util/log"
 	"github.com/presslabs/gitea-service-broker/pkg/broker"
 	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
-	logf "github.com/presslabs/controller-util/log"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
