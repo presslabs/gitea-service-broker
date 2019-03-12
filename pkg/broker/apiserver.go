@@ -2,13 +2,15 @@ package broker
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/pivotal-cf/brokerapi"
 	logf "github.com/presslabs/controller-util/log"
 	"github.com/presslabs/controller-util/log/adapters/lager"
 	"go.uber.org/zap"
+	"io"
+	"io/ioutil"
+	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
@@ -17,7 +19,8 @@ import (
 
 var log = logf.Log.WithName("gitea-service-broker")
 
-type BrokerServer struct { // nolint: golint
+type BrokerServer struct {
+	// nolint: golint
 	HTTPServer *http.Server
 }
 
@@ -33,12 +36,11 @@ func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager)
 			Password: options.Password,
 		},
 	)
-
-	broker := &BrokerServer{}
+	h.(*mux.Router).Use(loggingMiddleware)
 
 	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: broker.Log(h.ServeHTTP),
+		Handler: h,
 	}
 
 	return &BrokerServer{
@@ -46,11 +48,15 @@ func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager)
 	}
 }
 
-func (s *BrokerServer) Log(h http.HandlerFunc) http.HandlerFunc { // nolint: golint
-	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf(">>>>>>>>>>>>>>>>>>> %#v\n", r)
-		h(w, r)
-	}
+func ZapLogFormatter(_ io.Writer, params handlers.LogFormatterParams) {
+	log.Info(params.URL.String(),
+		"status_code", params.StatusCode,
+		"size", params.Size,
+		"method", params.Request.Method)
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return handlers.CustomLoggingHandler(ioutil.Discard, next, ZapLogFormatter)
 }
 
 func (s *BrokerServer) Start(stop <-chan struct{}) error { // nolint: golint
