@@ -20,12 +20,14 @@ import (
 	goflag "flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -46,9 +48,8 @@ var rootCmd = &cobra.Command{
 	Long:  `Service broker for Gitea that can provision repositories and bind deploy keys.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
-
 		// validate options
-		if err = options.Validate(); err != nil {
+		if err = options.LoadFromViper(); err != nil {
 			return err
 		}
 
@@ -119,4 +120,13 @@ func init() {
 	_ = rootCmd.PersistentFlags().MarkHidden("vmodule")
 	_ = rootCmd.PersistentFlags().Set("logtostderr", "true")
 	_ = rootCmd.PersistentFlags().Set("alsologtostderr", "false")
+
+	if err := viper.BindPFlags(rootCmd.Flags()); err != nil {
+		panic(err)
+	}
+
+	// Environment variables
+	viper.SetEnvPrefix("gsb")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
 }

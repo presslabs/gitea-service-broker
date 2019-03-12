@@ -3,9 +3,9 @@ package options
 import (
 	"errors"
 	"net/url"
-	"os"
 
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -36,84 +36,56 @@ var (
 
 // AddToFlagSet add options to a FlagSet
 func AddToFlagSet(flag *pflag.FlagSet) {
-	flag.StringVar(&ServiceID, "service-id", ServiceID, "Service ID")
-	flag.StringVar(&ServiceName, "service-name", ServiceName, "Service Name")
-	flag.StringVar(&DefaultPlanID, "default-plan-id", DefaultPlanID, "Default Plan ID")
-	flag.StringVar(&DefaultPlanName, "default-plan-name", DefaultPlanName, "Default Plan Name")
-	flag.StringVar(&Username, "username", "", "Service broker http username")
-	flag.StringVar(&Password, "password", "", "Service broker http password")
-	flag.StringVar(&GiteaURL, "gitea-url", GiteaURL, "Gitea URL")
-	flag.StringVar(&GiteaAdminAccessToken, "gitea-access-token", GiteaAdminAccessToken, "Token for accessing Gitea")
-	flag.StringVar(&GiteaAdminUsername, "gitea-admin-username", GiteaAdminUsername, "User to be used for Gitea admin operations")
-	flag.StringVar(&Namespace, "namespace", Namespace, "Namespace where objects such as secrets will be created")
-	flag.Float64Var(&OperationTimeout, "operation-timeout", OperationTimeout, "Number of seconds after which an unfinished operation is failed")
+	flag.String("service-id", ServiceID, "Service ID")
+	flag.String("service-name", ServiceName, "Service Name")
+	flag.String("default-plan-id", DefaultPlanID, "Default Plan ID")
+	flag.String("default-plan-name", DefaultPlanName, "Default Plan Name")
+	flag.String("username", "", "Service broker http username")
+	flag.String("password", "", "Service broker http password")
+	flag.String("gitea-url", GiteaURL, "Gitea URL")
+	flag.String("gitea-access-token", GiteaAdminAccessToken, "Token for accessing Gitea")
+	flag.String("gitea-admin-username", GiteaAdminUsername, "User to be used for Gitea admin operations")
+	flag.String("namespace", Namespace, "Namespace where objects such as secrets will be created")
+	flag.Float64("operation-timeout", OperationTimeout, "Number of seconds after which an unfinished operation is failed")
 
 }
 
-// Validate validates the arguments
-func Validate() error {
+// LoadFromViper loads and validates the arguments
+func LoadFromViper() error {
+	Username = viper.GetString("username")
+	if Username == "" {
+		return errors.New("You must specify username")
+	}
+
+	Password = viper.GetString("password")
+	if Password == "" {
+		return errors.New("You must specify password")
+	}
+
+	GiteaURL = viper.GetString("gitea-url")
+	if GiteaURL == "" {
+		return errors.New("You must specify gitea-url")
+	}
 	_, err := url.Parse(GiteaURL)
 	if err != nil {
 		return err
 	}
 
-	if Username == "" {
-		return errors.New("You must specify username")
-	}
-
-	if Password == "" {
-		return errors.New("You must specify password")
-	}
-
-	if GiteaURL == "" {
-		return errors.New("You must specify gitea-url")
-	}
-
+	GiteaAdminAccessToken = viper.GetString("gitea-access-token")
 	if GiteaAdminAccessToken == "" {
 		return errors.New("You must specify gitea-access-token")
 	}
 
+	GiteaAdminUsername = viper.GetString("gitea-admin-username")
 	if GiteaAdminUsername == "" {
 		return errors.New("You must specify gitea-admin-username")
 	}
+
+	ServiceID = viper.GetString("service-id")
+	ServiceName = viper.GetString("service-name")
+	DefaultPlanID = viper.GetString("default-plan-id")
+	DefaultPlanName = viper.GetString("default-plan-name")
+	Namespace = viper.GetString("namespace")
+	OperationTimeout = viper.GetFloat64("operation-timeout")
 	return nil
-}
-
-// loadDefaultsFromEnv fills in configs from environment variables
-func loadDefaultsFromEnv() {
-	namespace := os.Getenv("MY_NAMESPACE")
-	if len(namespace) != 0 {
-		Namespace = namespace
-	}
-
-	prefix := "GSB_"
-
-	envUsername := os.Getenv(prefix + "USERNAME")
-	if len(envUsername) != 0 {
-		Username = envUsername
-	}
-
-	envPassword := os.Getenv(prefix + "PASSWORD")
-	if len(envPassword) != 0 {
-		Password = envPassword
-	}
-
-	envGiteaURL := os.Getenv(prefix + "GITEA_URL")
-	if len(envGiteaURL) != 0 {
-		GiteaURL = envGiteaURL
-	}
-
-	envGiteaAdminAccessToken := os.Getenv(prefix + "GITEA_ADMIN_ACCESS_TOKEN")
-	if len(envGiteaAdminAccessToken) != 0 {
-		GiteaAdminAccessToken = envGiteaAdminAccessToken
-	}
-
-	envGiteaAdminUsername := os.Getenv(prefix + "GITEA_ADMIN_USERNAME")
-	if len(envGiteaAdminUsername) != 0 {
-		GiteaAdminUsername = envGiteaAdminUsername
-	}
-}
-
-func init() {
-	loadDefaultsFromEnv()
 }
