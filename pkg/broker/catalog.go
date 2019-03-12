@@ -8,21 +8,17 @@ import (
 	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 )
 
-var sharedPlan = brokerapi.ServicePlan{
-	ID:          options.SharedPlanID,
-	Name:        options.SharedPlanName,
-	Description: "This plan provides a Gitea repository on a shared VM configured for data persistence.",
+var defaultPlan = brokerapi.ServicePlan{
+	ID:          options.DefaultPlanID,
+	Name:        options.DefaultPlanName,
+	Description: "This plan provides a Gitea repository",
 	Metadata: &brokerapi.ServicePlanMetadata{
-		Bullets: []string{
-			"Each instance shares the same VM",
-			"Single dedicated Gitea process",
-			"Suitable for development & testing workloads",
-		},
-		DisplayName: "Shared-VM",
+		Bullets:     []string{},
+		DisplayName: "Repository",
 	},
 }
 
-var planList = []brokerapi.ServicePlan{sharedPlan}
+var planList = []brokerapi.ServicePlan{defaultPlan}
 
 // Services returns a list of brokered services
 func (giteaServiceBroker *GiteaServiceBroker) Services(ctx context.Context) ([]brokerapi.Service, error) {
