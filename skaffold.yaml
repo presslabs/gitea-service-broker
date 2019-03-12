@@ -1,0 +1,20 @@
+apiVersion: skaffold/v1beta6
+kind: Config
+build:
+  artifacts:
+    - image: quay.io/presslabs/gitea-service-broker
+deploy:
+  helm:
+    releases:
+      - name: gitea-service-broker
+        chartPath: charts/gitea-service-broker
+        namespace: gitea
+        values:
+          image: quay.io/presslabs/gitea-service-broker
+        setValues:
+          config.username: gsb-admin
+          config.password: not-so-secure
+          config.giteaURL: http://gitea.gitea.svc
+          config.giteaToken: 074dee81d4ea20dce08ea04be9635edecfd9a971
+          config.giteaUsername: gsb-admin
+
