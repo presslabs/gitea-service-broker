@@ -364,37 +364,7 @@ var _ = Describe("Gitea Service Broker", func() {
 					err := json.Unmarshal(recorder.Body.Bytes(), response)
 					Expect(err).To(Succeed())
 					Expect(response).To(Equal(&map[string]string{
-						"description": "you must specify a `repository_owner` or a `repository_organization`",
-					}))
-				})
-				It("doesn't create a secret", func() {
-					secrets := &corev1.SecretList{}
-
-					err = c.List(context.TODO(), &client.ListOptions{LabelSelector: secretsSelector}, secrets)
-					Expect(err).To(Succeed())
-
-					Expect(secrets.Items).To(BeEmpty())
-				})
-			})
-			Context("and both user and organization are specified", func() {
-				BeforeEach(func() {
-					params := body["parameters"].(map[string]string)
-					params["repository_owner"] = "owner"
-					params["repository_organization"] = "org"
-					body["parameters"] = params
-
-					request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
-					Expect(err).To(Succeed())
-				})
-				It("returns an error", func() {
-					server.Handler.ServeHTTP(recorder, request)
-
-					Expect(recorder.Code).To(Equal(http.StatusBadRequest), recorder.Body.String())
-					response := &map[string]string{}
-					err := json.Unmarshal(recorder.Body.Bytes(), response)
-					Expect(err).To(Succeed())
-					Expect(response).To(Equal(&map[string]string{
-						"description": "can not specify both `repository_owner` and `repository_organization`",
+						"description": "you must specify a `repository_owner`",
 					}))
 				})
 				It("doesn't create a secret", func() {

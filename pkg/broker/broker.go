@@ -37,10 +37,9 @@ type Binding struct {
 }
 
 type ProvisionParameters struct {
-	RepositoryName         string `json:"repository_name"`
-	RepositoryOrganization string `json:"repository_organization"`
-	RepositoryOwner        string `json:"repository_owner"`
-	MigrateURL             string `json:"migrate_url"`
+	RepositoryName  string `json:"repository_name"`
+	RepositoryOwner string `json:"repository_owner"`
+	MigrateURL      string `json:"migrate_url,omitempty"`
 }
 
 type BindingParameters struct {
@@ -63,7 +62,7 @@ var (
 
 func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, provisionDetails brokerapi.ProvisionDetails,
 	asyncAllowed bool) (spec brokerapi.ProvisionedServiceSpec, err error) {
-	log.V(0).Info("provisioning instance")
+	log.Info("provisioning instance")
 
 	// Get the provision parameters
 	parameters := ProvisionParameters{}
@@ -79,12 +78,8 @@ func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, p
 		errorList = append(errorList, errors.New("`repository_name` must be specified"))
 	}
 
-	if parameters.RepositoryOwner != "" && parameters.RepositoryOrganization != "" {
-		errorList = append(errorList, errors.New("can not specify both `repository_owner` and `repository_organization`"))
-	}
-
-	if parameters.RepositoryOwner == "" && parameters.RepositoryOrganization == "" {
-		errorList = append(errorList, errors.New("you must specify a `repository_owner` or a `repository_organization`"))
+	if parameters.RepositoryOwner == "" {
+		errorList = append(errorList, errors.New("you must specify a `repository_owner`"))
 	}
 
 	err = utilerrors.Flatten(utilerrors.NewAggregate(errorList))
@@ -487,10 +482,9 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 
 func (b *GiteaServiceBroker) provisionInstance(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
 	data := map[string][]byte{
-		"repository_organization": []byte(params.RepositoryOrganization),
-		"repository_owner":        []byte(params.RepositoryOwner),
-		"repository_name":         []byte(params.RepositoryName),
-		"migrate_url":             []byte(params.MigrateURL),
+		"repository_owner": []byte(params.RepositoryOwner),
+		"repository_name":  []byte(params.RepositoryName),
+		"migrate_url":      []byte(params.MigrateURL),
 	}
 
 	Secret := &corev1.Secret{Data: data}
@@ -507,7 +501,7 @@ func (b *GiteaServiceBroker) provisionInstance(ctx context.Context, instanceID s
 			return nil, errors.New("couldn't get repository identity")
 		}
 
-		log.V(0).Info("instance Secret already existed", "instance_id", instanceID, "Secret", SecretKey)
+		log.Info("instance Secret already existed", "instance_id", instanceID, "Secret", SecretKey)
 
 		user, name, err := getRepositoryIdentity(Secret)
 		if err != nil {
@@ -517,7 +511,7 @@ func (b *GiteaServiceBroker) provisionInstance(ctx context.Context, instanceID s
 		// compare given parameters to existing instance parameters
 		for key, param := range data {
 			if !bytes.Equal(Secret.Data[key], param) {
-				log.V(0).Info("received parameters were different from existing instance parameters")
+				log.Info("received parameters were different from existing instance parameters")
 				return nil, brokerapi.ErrInstanceAlreadyExists
 			}
 		}
@@ -544,29 +538,14 @@ func (b *GiteaServiceBroker) createInstance(ctx context.Context, instanceID stri
 	if params.MigrateURL != "" {
 		return b.migrateRepo(ctx, instanceID, params)
 	} else {
-		if params.RepositoryOwner != "" {
-			log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
-			repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
-				Name:    params.RepositoryName,
-				Private: true,
-			})
-			if err != nil {
-				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
-				return nil, errors.New("couldn't provision repository")
-			}
-		} else if params.RepositoryOrganization != "" {
-			log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_organization", params.RepositoryOrganization)
-			repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOrganization, giteasdk.CreateRepoOption{
-				Name:    params.RepositoryName,
-				Private: true,
-			})
-			if err != nil {
-				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
-				return nil, errors.New("couldn't provision repository")
-			}
-		} else {
-			// this should be unreachable
-			return nil, errors.New("default organization not implemented")
+		log.Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
+		repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
+			Name:    params.RepositoryName,
+			Private: true,
+		})
+		if err != nil {
+			log.Error(err, "couldn't provision repository", "instance_id", instanceID)
+			return nil, errors.New("couldn't provision repository")
 		}
 	}
 	return repository, nil
@@ -574,25 +553,13 @@ func (b *GiteaServiceBroker) createInstance(ctx context.Context, instanceID stri
 
 func (b *GiteaServiceBroker) migrateRepo(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
 	// Get repo owner / organization ID
-	uid := -1
-	if params.RepositoryOrganization != "" {
-		giteaOrg, err := b.GiteaClient.GetOrg(params.RepositoryOrganization)
-		if err != nil {
-			return nil, errors.New("could not retrieve the given repository_organization details")
-		}
-		uid = int(giteaOrg.ID)
-	} else if params.RepositoryOwner != "" {
-		giteaUser, err := b.GiteaClient.GetUserInfo(params.RepositoryOwner)
-		if err != nil {
-			return nil, errors.New("could not retrieve the given repository_owner details")
-		}
-		uid = int(giteaUser.ID)
-	} else {
-		// this should be unreachable
-		return nil, errors.New("default organization not implemented")
+	giteaOrg, err := b.GiteaClient.GetOrg(params.RepositoryOwner)
+	if err != nil {
+		return nil, errors.New("could not retrieve the given repository_organization details")
 	}
+	uid := int(giteaOrg.ID)
 
-	log.V(0).Info("creating repository", "migrate_url", params.MigrateURL, "repository_name", params.RepositoryName, "UID", uid)
+	log.Info("creating repository", "migrate_url", params.MigrateURL, "repository_name", params.RepositoryName, "UID", uid)
 	repository, err := b.GiteaClient.MigrateRepo(giteasdk.MigrateRepoOption{
 		CloneAddr: params.MigrateURL,
 		RepoName:  params.RepositoryName,
