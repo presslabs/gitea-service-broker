@@ -40,6 +40,8 @@ func AddToFlagSet(flag *pflag.FlagSet) {
 	flag.StringVar(&ServiceName, "service-name", ServiceName, "Service Name")
 	flag.StringVar(&DefaultPlanID, "default-plan-id", DefaultPlanID, "Default Plan ID")
 	flag.StringVar(&DefaultPlanName, "default-plan-name", DefaultPlanName, "Default Plan Name")
+	flag.StringVar(&Username, "username", "", "Service broker http username")
+	flag.StringVar(&Password, "password", "", "Service broker http password")
 	flag.StringVar(&GiteaURL, "gitea-url", GiteaURL, "Gitea URL")
 	flag.StringVar(&GiteaAdminAccessToken, "gitea-access-token", GiteaAdminAccessToken, "Token for accessing Gitea")
 	flag.StringVar(&GiteaAdminUsername, "gitea-admin-username", GiteaAdminUsername, "User to be used for Gitea admin operations")
