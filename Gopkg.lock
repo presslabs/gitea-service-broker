@@ -21,6 +21,14 @@
   revision = "600c19aa03dcc195da4c7e06c031599be779389c"
 
 [[projects]]
+  branch = "master"
+  digest = "1:e9a61a8bda38b9f274794d9c83348d88fd4c5a6aeec519d1fd5c9609f70019e7"
+  name = "github.com/alecthomas/jsonschema"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "a6952de1bbe6e1c7ef118614925fe4b02847383a"
+
+[[projects]]
   digest = "1:464aef731a5f82ded547c62e249a2e9ec59fbbc9ddab53cda7b9857852630a61"
   name = "github.com/appscode/jsonpatch"
   packages = ["."]
@@ -954,10 +962,12 @@
   analyzer-version = 1
   input-imports = [
     "code.gitea.io/sdk/gitea",
+    "github.com/alecthomas/jsonschema",
     "github.com/go-logr/logr",
     "github.com/go-logr/zapr",
     "github.com/google/uuid",
     "github.com/gorilla/handlers",
+    "github.com/gorilla/mux",
     "github.com/onsi/ginkgo",
     "github.com/onsi/gomega",
     "github.com/pivotal-cf/brokerapi",
@@ -966,7 +976,6 @@
     "github.com/spf13/cobra",
     "github.com/spf13/pflag",
     "go.uber.org/zap",
-    "go.uber.org/zap/zapcore",
     "golang.org/x/crypto/ssh",
     "golang.org/x/net/context",
     "k8s.io/api/core/v1",
@@ -981,7 +990,6 @@
     "sigs.k8s.io/controller-runtime/pkg/client/config",
     "sigs.k8s.io/controller-runtime/pkg/envtest",
     "sigs.k8s.io/controller-runtime/pkg/manager",
-    "sigs.k8s.io/controller-runtime/pkg/runtime/log",
     "sigs.k8s.io/controller-runtime/pkg/runtime/signals",
     "sigs.k8s.io/controller-tools/cmd/controller-gen",
     "sigs.k8s.io/testing_frameworks/integration/addr",
