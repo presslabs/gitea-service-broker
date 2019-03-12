@@ -19,6 +19,8 @@ package cmd
 import (
 	goflag "flag"
 	"fmt"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
 	"os"
 
 	"github.com/go-logr/logr"
@@ -52,7 +54,10 @@ var rootCmd = &cobra.Command{
 		}
 
 		// setup logging
-		logf.SetLogger(logf.ZapLogger(true))
+		development := true
+		zapLogger := logf.RawZapLoggerTo(os.Stderr, development)
+		logf.SetLogger(zapr.NewLogger(zapLogger))
+		zap.ReplaceGlobals(zapLogger)
 
 		// configure Kubernetes rest.Client
 		if cfg, err = config.GetConfig(); err != nil {
@@ -111,4 +116,6 @@ func init() {
 	_ = rootCmd.PersistentFlags().MarkHidden("stderrthreshold")
 	_ = rootCmd.PersistentFlags().MarkHidden("v")
 	_ = rootCmd.PersistentFlags().MarkHidden("vmodule")
+	_ = rootCmd.PersistentFlags().Set("logtostderr", "true")
+	_ = rootCmd.PersistentFlags().Set("alsologtostderr", "false")
 }
