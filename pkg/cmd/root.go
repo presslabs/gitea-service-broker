@@ -19,19 +19,21 @@ package cmd
 import (
 	goflag "flag"
 	"fmt"
-	"github.com/go-logr/zapr"
-	"go.uber.org/zap"
 	"os"
 
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
+
 	"github.com/go-logr/logr"
-	logf "github.com/presslabs/controller-util/log"
-	"github.com/presslabs/gitea-service-broker/pkg/broker"
-	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/signals"
+
+	logf "github.com/presslabs/controller-util/log"
+	"github.com/presslabs/gitea-service-broker/pkg/broker"
+	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 )
 
 var cfg *rest.Config
@@ -44,9 +46,6 @@ var rootCmd = &cobra.Command{
 	Long:  `Service broker for Gitea that can provision repositories and bind deploy keys.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
-
-		// load options from env
-		options.LoadFromEnv()
 
 		// validate options
 		if err = options.Validate(); err != nil {
@@ -83,7 +82,9 @@ var runAPIServer = func(cmd *cobra.Command, args []string) {
 	log.Info("Starting Gitea Service Broker apiserver...")
 
 	// Create a new Cmd to provide shared dependencies and start components
-	mgr, err := manager.New(cfg, manager.Options{})
+	mgr, err := manager.New(cfg, manager.Options{
+		Namespace: options.Namespace,
+	})
 	if err != nil {
 		log.Error(err, "unable to create a new manager")
 		os.Exit(1)

@@ -77,8 +77,13 @@ func Validate() error {
 	return nil
 }
 
-// LoadFromEnv fills in configs from environment variables
-func LoadFromEnv() {
+// loadDefaultsFromEnv fills in configs from environment variables
+func loadDefaultsFromEnv() {
+	namespace := os.Getenv("MY_NAMESPACE")
+	if len(namespace) != 0 {
+		Namespace = namespace
+	}
+
 	prefix := "GSB_"
 
 	envUsername := os.Getenv(prefix + "USERNAME")
@@ -105,4 +110,8 @@ func LoadFromEnv() {
 	if len(envGiteaAdminUsername) != 0 {
 		GiteaAdminUsername = envGiteaAdminUsername
 	}
+}
+
+func init() {
+	loadDefaultsFromEnv()
 }
