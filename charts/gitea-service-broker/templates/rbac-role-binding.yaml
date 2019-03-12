@@ -1,0 +1,19 @@
+{{- if .Values.rbac.create }}
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "gitea-service-broker.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "gitea-service-broker.name" . }}
+    helm.sh/chart: {{ include "gitea-service-broker.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gitea-service-broker.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "gitea-service-broker.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
