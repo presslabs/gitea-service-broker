@@ -17,7 +17,6 @@ import (
 	"time"
 
 	giteasdk "code.gitea.io/sdk/gitea"
-	"github.com/google/uuid"
 	"github.com/pivotal-cf/brokerapi"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
@@ -43,8 +42,7 @@ type ProvisionParameters struct {
 }
 
 type BindingParameters struct {
-	Title     string `json:"title"`
-	PublicKey string `json:"public_key"`
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 type GiteaServiceBroker struct {
@@ -170,53 +168,41 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	if err != nil {
 		return binding, err
 	}
-	if parameters.Title == "" {
-		title, err := uuid.NewRandom()
-		if err != nil {
-			log.Error(err, "couldn't generate a deploy key title")
-			return binding, errors.New("couldn't generate a title")
-		}
 
-		parameters.Title = title.String()
+	title := bindingID
+
+	privateRSAKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return binding, err
 	}
-	var privateRSAKeyPEM string
+	privateRSAKeyDer := x509.MarshalPKCS1PrivateKey(privateRSAKey)
+	privateRSAKeyBlock := pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateRSAKeyDer,
+	}
+	privateRSAKeyPEM := string(pem.EncodeToMemory(&privateRSAKeyBlock))
 
-	// create a OpenSSH RSA key pair
-	if parameters.PublicKey == "" {
-		privateRSAKey, err := rsa.GenerateKey(rand.Reader, 4096)
-		if err != nil {
-			return binding, err
-		}
-		privateRSAKeyDer := x509.MarshalPKCS1PrivateKey(privateRSAKey)
-		privateRSAKeyBlock := pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: privateRSAKeyDer,
-		}
-		privateRSAKeyPEM = string(pem.EncodeToMemory(&privateRSAKeyBlock))
+	publicRSAKey := privateRSAKey.PublicKey
+	publicKey, err := ssh.NewPublicKey(&publicRSAKey)
+	if err != nil {
+		return binding, err
+	}
+	publicKeyOpenSSH := fmt.Sprintf("%s %s",
+		publicKey.Type(),
+		base64.StdEncoding.EncodeToString(publicKey.Marshal()),
+	)
 
-		publicRSAKey := privateRSAKey.PublicKey
-		publicKey, err := ssh.NewPublicKey(&publicRSAKey)
-		if err != nil {
-			return binding, err
-		}
-		publicKeyOpenSSH := fmt.Sprintf("%s %s",
-			publicKey.Type(),
-			base64.StdEncoding.EncodeToString(publicKey.Marshal()),
-		)
-		parameters.PublicKey = publicKeyOpenSSH
-
-		if err != nil {
-			return binding, err
-		}
+	if err != nil {
+		return binding, err
 	}
 
-	_, err = b.getOrCreateBinding(ctx, instanceID, bindingID, instanceSecret, parameters)
+	_, err = b.getOrCreateBinding(ctx, instanceID, bindingID, instanceSecret, publicKeyOpenSSH, title)
 	if err != nil {
 		return binding, err
 	}
 
 	credentials := map[string]string{
-		"public_key": parameters.PublicKey,
+		"public_key": publicKeyOpenSSH,
 	}
 	if privateRSAKeyPEM != "" {
 		credentials["private_key"] = privateRSAKeyPEM
@@ -423,13 +409,13 @@ func (b *GiteaServiceBroker) getInstance(ctx context.Context, instanceID string)
 }
 
 func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID, bindingID string,
-	instanceSecret *corev1.Secret, params BindingParameters) (*giteasdk.DeployKey, error) {
+	instanceSecret *corev1.Secret, publicKey, keyTitle string) (*giteasdk.DeployKey, error) {
 	user, name, err := getRepositoryIdentity(instanceSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	fingerprint, err := getPublicKeyFingerprint(params.PublicKey)
+	fingerprint, err := getPublicKeyFingerprint(publicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -437,8 +423,8 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 
 	data := map[string][]byte{
 		"instance_id": []byte(instanceID),
-		"title":       []byte(params.Title),
-		"public_key":  []byte(params.PublicKey),
+		"title":       []byte(keyTitle),
+		"public_key":  []byte(publicKey),
 		"fingerprint": []byte(fingerprint),
 	}
 	bindingSecret := &corev1.Secret{Data: data}
@@ -470,8 +456,8 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 
 	// create the deploy key
 	key, err := b.GiteaClient.CreateDeployKey(user, name, giteasdk.CreateKeyOption{
-		Title: params.Title,
-		Key:   params.PublicKey,
+		Title: keyTitle,
+		Key:   publicKey,
 	})
 	if err != nil {
 		return nil, err

@@ -18,11 +18,9 @@ package broker
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -113,10 +111,9 @@ var _ = Describe("Gitea Service Broker", func() {
 				Namespace: instanceSecretKey.Namespace,
 			},
 			Data: map[string][]byte{
-				"repository_organization": []byte(""),
-				"repository_owner":        []byte(repo.Owner.UserName),
-				"repository_name":         []byte(repo.Name),
-				"migrate_url":             []byte(""),
+				"repository_owner": []byte(repo.Owner.UserName),
+				"repository_name":  []byte(repo.Name),
+				"migrate_url":      []byte(""),
 			},
 		})
 		Expect(err).To(Succeed())
@@ -350,7 +347,6 @@ var _ = Describe("Gitea Service Broker", func() {
 				BeforeEach(func() {
 					params := body["parameters"].(map[string]string)
 					params["repository_owner"] = ""
-					params["repository_organization"] = ""
 					body["parameters"] = params
 
 					request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
@@ -380,33 +376,19 @@ var _ = Describe("Gitea Service Broker", func() {
 	})
 	When("binding an instance", func() {
 		var (
-			err                 error
-			body                map[string]interface{}
-			apiURL              string
-			createDeployKeyCall func(string, string, giteasdk.CreateKeyOption) (*giteasdk.DeployKey, error)
+			err    error
+			body   map[string]interface{}
+			apiURL string
 		)
 		BeforeEach(func() {
 			body = map[string]interface{}{
 				"service_id": options.ServiceID,
 				"plan_id":    options.DefaultPlanID,
-				"parameters": map[string]string{
-					"title":      deployKey.Title,
-					"public_key": publicKey,
-				},
 			}
 
 			apiURL = fmt.Sprintf("/v2/service_instances/%s/service_bindings/%s", instanceID, bindingID)
 			request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
 			Expect(err).To(Succeed())
-
-			createDeployKeyCall = func(user, repoName string, options giteasdk.CreateKeyOption) (*giteasdk.DeployKey,
-				error) {
-				defer GinkgoRecover()
-				Expect(user).To(Equal(repo.Owner.UserName))
-				Expect(repoName).To(Equal(repo.Name))
-
-				return deployKey, nil
-			}
 		})
 		Context("and a service instance exists", func() {
 			BeforeEach(func() {
@@ -427,100 +409,6 @@ var _ = Describe("Gitea Service Broker", func() {
 
 				err = c.Create(context.TODO(), instanceSecret)
 				Expect(err).To(Succeed())
-			})
-			Context("and the binding ID hasn't been used before", func() {
-				BeforeEach(func() {
-					giteaFakeClient.CreateDeployKeyExpectedCalls = append(
-						giteaFakeClient.CreateDeployKeyExpectedCalls,
-						createDeployKeyCall,
-					)
-				})
-				Context("and a public key has been given", func() {
-					It("returns successful response containing public_key", func() {
-						server.Handler.ServeHTTP(recorder, request)
-
-						Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
-						response := &map[string]map[string]string{}
-						err := json.Unmarshal(recorder.Body.Bytes(), response)
-						Expect(err).To(Succeed())
-						Expect(response).To(Equal(&map[string]map[string]string{
-							"credentials": {
-								"public_key": publicKey,
-							},
-						}))
-					})
-					It("creates binding secret", func() {
-						server.Handler.ServeHTTP(recorder, request)
-
-						bindingSecret := &corev1.Secret{}
-						err := c.Get(context.TODO(), bindingSecretKey, bindingSecret)
-						Expect(err).To(Succeed())
-						Expect(bindingSecret.Labels["app.kubernetes.io/component"]).To(Equal("service-binding"))
-						Expect(string(bindingSecret.Data["fingerprint"])).To(Equal(publicKeyFingerprint))
-					})
-				})
-				Context("and a public key hasn't been given", func() {
-					BeforeEach(func() {
-						params := body["parameters"].(map[string]string)
-						params["public_key"] = ""
-						body["parameters"] = params
-
-						request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
-						Expect(err).To(Succeed())
-					})
-					It("returns successful response containing public and private key", func() {
-						server.Handler.ServeHTTP(recorder, request)
-
-						Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
-						response := map[string]map[string]string{}
-						err := json.Unmarshal(recorder.Body.Bytes(), &response)
-
-						signer, err := ssh.ParsePrivateKey([]byte(response["credentials"]["private_key"]))
-						Expect(err).To(Succeed())
-
-						decodedPublicKey := fmt.Sprintf("%s %s",
-							signer.PublicKey().Type(), base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal()))
-						Expect(decodedPublicKey).To(Equal(response["credentials"]["public_key"]))
-					})
-				})
-			})
-			Context("and the binding ID has been used before", func() {
-				BeforeEach(createBindingSecret)
-				Context("and requested binding is identical", func() {
-					BeforeEach(func() {
-						giteaFakeClient.ListDeployKeysExpectedCalls = append(
-							giteaFakeClient.ListDeployKeysExpectedCalls, listDeployKeysCall,
-						)
-					})
-					It("returns successful response", func() {
-						server.Handler.ServeHTTP(recorder, request)
-
-						Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
-						response := &map[string]map[string]string{}
-						err := json.Unmarshal(recorder.Body.Bytes(), response)
-						Expect(err).To(Succeed())
-						Expect(response).To(Equal(&map[string]map[string]string{
-							"credentials": {
-								"public_key": publicKey,
-							},
-						}))
-					})
-				})
-				Context("and requested binding is different", func() {
-					BeforeEach(func() {
-						params := body["parameters"].(map[string]string)
-						params["title"] = "different"
-						body["parameters"] = params
-
-						request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
-						Expect(err).To(Succeed())
-					})
-					It("returns already exists error response", func() {
-						server.Handler.ServeHTTP(recorder, request)
-
-						Expect(recorder.Code).To(Equal(http.StatusConflict), recorder.Body.String())
-					})
-				})
 			})
 		})
 
@@ -817,34 +705,6 @@ var _ = Describe("Gitea Service Broker", func() {
 		Context("and the binding secret exists", func() {
 			BeforeEach(createInstanceSecret)
 			BeforeEach(createBindingSecret)
-			Context("and the deploy key exists", func() {
-				BeforeEach(func() {
-					giteaFakeClient.ListDeployKeysExpectedCalls = append(
-						giteaFakeClient.ListDeployKeysExpectedCalls, listDeployKeysCall,
-					)
-				})
-				It("returns a successful response", func() {
-					server.Handler.ServeHTTP(recorder, request)
-
-					Expect(recorder.Code).To(Equal(http.StatusOK), recorder.Body.String())
-					response := &map[string]map[string]string{}
-					err := json.Unmarshal(recorder.Body.Bytes(), response)
-					Expect(err).To(Succeed())
-					Expect(response).To(Equal(&map[string]map[string]string{
-						"credentials": {
-							"public_key": publicKey,
-						},
-						"parameters": {
-							"title": deployKey.Title,
-						},
-					}))
-				})
-				It("actually checks the repository's deploy keys", func() {
-					server.Handler.ServeHTTP(recorder, request)
-
-					Expect(giteaFakeClient.ListDeployKeysExpectedCalls).To(BeEmpty())
-				})
-			})
 			Context("and the deploy key doesn't exist", func() {
 				BeforeEach(func() {
 					giteaFakeClient.ListDeployKeysExpectedCalls = append(
