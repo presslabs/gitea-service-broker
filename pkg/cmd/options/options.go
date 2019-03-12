@@ -13,10 +13,10 @@ var (
 	ServiceID = "b431cc67-89fa-4f4a-8b1b-8f8a70c71b5e"
 	// ServiceName is the name of the service
 	ServiceName = "gitea"
-	// SharedPlanID is the ID of the plan
-	SharedPlanID = "3034df5d-c976-4265-87fd-7d3cfbe54a79"
-	// SharedPlanName is the name of the shared plan
-	SharedPlanName = "shared"
+	// DefaultPlanID is the ID of the plan
+	DefaultPlanID = "3034df5d-c976-4265-87fd-7d3cfbe54a79"
+	// DefaultPlanName is the name of the default plan
+	DefaultPlanName = "default"
 	// Username is used to connect to the broker API
 	Username = ""
 	// Password is used to connect to the broker API
@@ -38,8 +38,8 @@ var (
 func AddToFlagSet(flag *pflag.FlagSet) {
 	flag.StringVar(&ServiceID, "service-id", ServiceID, "Service ID")
 	flag.StringVar(&ServiceName, "service-name", ServiceName, "Service Name")
-	flag.StringVar(&SharedPlanID, "shared-plan-id", SharedPlanID, "Shared Plan ID")
-	flag.StringVar(&SharedPlanName, "shared-plan-name", SharedPlanName, "Shared Plan Name")
+	flag.StringVar(&DefaultPlanID, "default-plan-id", DefaultPlanID, "Default Plan ID")
+	flag.StringVar(&DefaultPlanName, "default-plan-name", DefaultPlanName, "Default Plan Name")
 	flag.StringVar(&GiteaURL, "gitea-url", GiteaURL, "Gitea URL")
 	flag.StringVar(&GiteaAdminAccessToken, "gitea-access-token", GiteaAdminAccessToken, "Token for accessing Gitea")
 	flag.StringVar(&GiteaAdminUsername, "gitea-admin-username", GiteaAdminUsername, "User to be used for Gitea admin operations")

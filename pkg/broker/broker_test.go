@@ -207,7 +207,7 @@ var _ = Describe("Gitea Service Broker", func() {
 		BeforeEach(func() {
 			body = map[string]interface{}{
 				"service_id": options.ServiceID,
-				"plan_id":    options.SharedPlanID,
+				"plan_id":    options.DefaultPlanID,
 				"parameters": map[string]string{
 					"repository_name":  repo.Name,
 					"repository_owner": repo.Owner.UserName,
@@ -418,7 +418,7 @@ var _ = Describe("Gitea Service Broker", func() {
 		BeforeEach(func() {
 			body = map[string]interface{}{
 				"service_id": options.ServiceID,
-				"plan_id":    options.SharedPlanID,
+				"plan_id":    options.DefaultPlanID,
 				"parameters": map[string]string{
 					"title":      deployKey.Title,
 					"public_key": publicKey,
@@ -577,7 +577,7 @@ var _ = Describe("Gitea Service Broker", func() {
 		BeforeEach(func() {
 			queryParams = map[string][]string{
 				"service_id": {options.ServiceID},
-				"plan_id":    {options.SharedPlanID},
+				"plan_id":    {options.DefaultPlanID},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s", instanceID)
 			request, err = createAPIRequest("", queryParams, apiURL, "DELETE")
@@ -670,7 +670,7 @@ var _ = Describe("Gitea Service Broker", func() {
 
 			queryParams = map[string][]string{
 				"service_id": {options.ServiceID},
-				"plan_id":    {options.SharedPlanID},
+				"plan_id":    {options.DefaultPlanID},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s/service_bindings/%s", instanceID, bindingID)
 			request, err = createAPIRequest("", queryParams, apiURL, "DELETE")
@@ -755,7 +755,7 @@ var _ = Describe("Gitea Service Broker", func() {
 		BeforeEach(func() {
 			queryParams = map[string][]string{
 				"service_id": {options.ServiceID},
-				"plan_id":    {options.SharedPlanID},
+				"plan_id":    {options.DefaultPlanID},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s", instanceID)
 			request, err = createAPIRequest("", queryParams, apiURL, "GET")
@@ -778,7 +778,7 @@ var _ = Describe("Gitea Service Broker", func() {
 					Expect(err).To(Succeed())
 					Expect(response).To(Equal(&map[string]string{
 						"service_id":    options.ServiceID,
-						"plan_id":       options.SharedPlanID,
+						"plan_id":       options.DefaultPlanID,
 						"dashboard_url": repo.HTMLURL,
 					}))
 				})
@@ -838,7 +838,7 @@ var _ = Describe("Gitea Service Broker", func() {
 		BeforeEach(func() {
 			queryParams = map[string][]string{
 				"service_id": {options.ServiceID},
-				"plan_id":    {options.SharedPlanID},
+				"plan_id":    {options.DefaultPlanID},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s/service_bindings/%s", instanceID, bindingID)
 			request, err = createAPIRequest("", queryParams, apiURL, "GET")

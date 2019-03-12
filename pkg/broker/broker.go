@@ -61,7 +61,8 @@ var (
 	).Build()
 )
 
-func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, provisionDetails brokerapi.ProvisionDetails, asyncAllowed bool) (spec brokerapi.ProvisionedServiceSpec, err error) {
+func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, provisionDetails brokerapi.ProvisionDetails,
+	asyncAllowed bool) (spec brokerapi.ProvisionedServiceSpec, err error) {
 	log.V(0).Info("provisioning instance")
 
 	// Get the provision parameters
@@ -112,13 +113,14 @@ func (b *GiteaServiceBroker) GetInstance(ctx context.Context, instanceID string)
 	}
 
 	spec.DashboardURL = repository.HTMLURL
-	spec.PlanID = options.SharedPlanID
+	spec.PlanID = options.DefaultPlanID
 	spec.ServiceID = options.ServiceID
 
 	return spec, nil
 }
 
-func (b *GiteaServiceBroker) Deprovision(ctx context.Context, instanceID string, details brokerapi.DeprovisionDetails, asyncAllowed bool) (brokerapi.DeprovisionServiceSpec, error) {
+func (b *GiteaServiceBroker) Deprovision(ctx context.Context, instanceID string, details brokerapi.DeprovisionDetails, asyncAllowed bool) (
+	brokerapi.DeprovisionServiceSpec, error) {
 	spec := brokerapi.DeprovisionServiceSpec{IsAsync: false}
 
 	secret, err := b.getInstanceSecret(ctx, instanceID)
@@ -183,6 +185,8 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 		parameters.Title = title.String()
 	}
 	var privateRSAKeyPEM string
+
+	// create a OpenSSH RSA key pair
 	if parameters.PublicKey == "" {
 		privateRSAKey, err := rsa.GenerateKey(rand.Reader, 4096)
 		if err != nil {
@@ -543,7 +547,8 @@ func (b *GiteaServiceBroker) createInstance(ctx context.Context, instanceID stri
 		if params.RepositoryOwner != "" {
 			log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
 			repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
-				Name: params.RepositoryName,
+				Name:    params.RepositoryName,
+				Private: true,
 			})
 			if err != nil {
 				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
@@ -552,7 +557,8 @@ func (b *GiteaServiceBroker) createInstance(ctx context.Context, instanceID stri
 		} else if params.RepositoryOrganization != "" {
 			log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_organization", params.RepositoryOrganization)
 			repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOrganization, giteasdk.CreateRepoOption{
-				Name: params.RepositoryName,
+				Name:    params.RepositoryName,
+				Private: true,
 			})
 			if err != nil {
 				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
@@ -594,32 +600,6 @@ func (b *GiteaServiceBroker) migrateRepo(ctx context.Context, instanceID string,
 	})
 	if err != nil {
 		return nil, errors.New("couldn't migrate given repository")
-	}
-	return repository, nil
-}
-
-func (b *GiteaServiceBroker) creteRepo(ctx context.Context, instanceID string, params ProvisionParameters) (repository *giteasdk.Repository, err error) {
-	if params.RepositoryOwner != "" {
-		log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
-		repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
-			Name: params.RepositoryName,
-		})
-		if err != nil {
-			log.Error(err, "couldn't provision repository", "instance_id", instanceID)
-			return nil, errors.New("couldn't provision repository")
-		}
-	} else if params.RepositoryOrganization != "" {
-		log.V(0).Info("creating repository", "repository_name", params.RepositoryName, "repository_organization", params.RepositoryOrganization)
-		repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOrganization, giteasdk.CreateRepoOption{
-			Name: params.RepositoryName,
-		})
-		if err != nil {
-			log.Error(err, "couldn't provision repository", "instance_id", instanceID)
-			return nil, errors.New("couldn't provision repository")
-		}
-	} else {
-		// this should be unreachable
-		return nil, errors.New("default organization not implemented")
 	}
 	return repository, nil
 }
