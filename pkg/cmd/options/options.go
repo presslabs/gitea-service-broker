@@ -12,7 +12,7 @@ var (
 	// ServiceID is the ID of the service
 	ServiceID = "b431cc67-89fa-4f4a-8b1b-8f8a70c71b5e"
 	// ServiceName is the name of the service
-	ServiceName = "gitea"
+	ServiceName = "gitea-repository"
 	// DefaultPlanID is the ID of the plan
 	DefaultPlanID = "3034df5d-c976-4265-87fd-7d3cfbe54a79"
 	// DefaultPlanName is the name of the default plan
