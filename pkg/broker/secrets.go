@@ -4,19 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/pivotal-cf/brokerapi"
-	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 )
 
 func getInstanceKeyName(instanceID string) string {
 	return fmt.Sprintf("gsb-instance-%s", instanceID)
 }
 
-func getBindingKeyName(instanceID string) string {
-	return fmt.Sprintf("gsb-binding-%s", instanceID)
+func getBindingKeyName(bindingID string) string {
+	return fmt.Sprintf("gsb-binding-%s", bindingID)
 }
 
 func (giteaServiceBroker *GiteaServiceBroker) getBindingKey(bindingID string) client.ObjectKey {
@@ -87,26 +89,16 @@ func (giteaServiceBroker *GiteaServiceBroker) getOrCreateBindingSecret(ctx conte
 	return created, err
 }
 
-func getRepositoryOwner(secret *corev1.Secret) (string, error) {
-	if owner, ok := secret.Data["repository_owner"]; ok {
-		return string(owner), nil
-	} else if org, ok := secret.Data["repository_organization"]; ok {
-		return string(org), nil
-	}
-	log.V(2).Info("repository owner not found", "secret", secret.Name)
-	return "", errors.New("repository owner not found")
-}
-
 func getRepositoryIdentity(secret *corev1.Secret) (owner, name string, err error) {
-	owner, err = getRepositoryOwner(secret)
-	if err != nil {
-		return
+	ownerBytes, ok := secret.Data["repository_owner"]
+	if !ok {
+		return "", "", errors.New("repository owner not found")
 	}
-	name = string(secret.Data["repository_name"])
-	if name == "" {
-		err = errors.New("repository name not found")
+	nameBytes, ok := secret.Data["repository_name"]
+	if !ok {
+		return "", "", errors.New("repository name not found")
 	}
-	return
+	return string(ownerBytes), string(nameBytes), nil
 }
 
 func getDeployKeyIdentity(instanceSecret, bindingSecret *corev1.Secret) (user, repo, fingerprint, title string,
@@ -126,19 +118,18 @@ func getDeployKeyIdentity(instanceSecret, bindingSecret *corev1.Secret) (user, r
 }
 
 func getOrCreateSecret(ctx context.Context, client client.Client, key client.ObjectKey, secret *corev1.Secret) (bool, error) {
-	created := false
-	err := client.Get(ctx, key, secret)
+	secret.Labels["app.kubernetes.io/name"] = "gitea-service-broker"
+	secret.Namespace = key.Namespace
+	secret.Name = key.Name
+	err := client.Create(ctx, secret)
 
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			secret.Labels["app.kubernetes.io/name"] = "gitea-service-broker"
-
-			secret.SetNamespace(key.Namespace)
-			secret.SetName(key.Name)
-			err = client.Create(ctx, secret)
-			created = true
-		}
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return false, err
 	}
 
-	return created, err
+	if err == nil {
+		return true, nil
+	}
+
+	return false, client.Get(ctx, key, secret)
 }
