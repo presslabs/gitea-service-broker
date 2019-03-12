@@ -29,12 +29,6 @@ import (
 	"github.com/presslabs/gitea-service-broker/pkg/internal/vendors/gitea"
 )
 
-type Binding struct {
-	HostURL   string
-	CloneURL  string
-	PublicKey string
-}
-
 type ProvisionParameters struct {
 	RepositoryName  string `json:"repository_name"`
 	RepositoryOwner string `json:"repository_owner"`
@@ -196,59 +190,25 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 		return binding, err
 	}
 
-	_, err = b.getOrCreateBinding(ctx, instanceID, bindingID, instanceSecret, publicKeyOpenSSH, title)
+	_, err = b.getOrCreateBinding(ctx, instanceID, bindingID, publicKeyOpenSSH, parameters.ReadOnly)
 	if err != nil {
 		return binding, err
 	}
 
-	credentials := map[string]string{
-		"public_key": publicKeyOpenSSH,
+	binding.Credentials = map[string]string{
+		"id_rsa":     privateRSAKeyPEM,
+		"id_rsa.pub": publicKeyOpenSSH,
+		"clone_url":  repository.CloneURL,
 	}
-	if privateRSAKeyPEM != "" {
-		credentials["private_key"] = privateRSAKeyPEM
-	}
-	binding.Credentials = credentials
 
 	return binding, nil
 }
 
-// GetBinding returns a Gitea DeployKey info
+// GetBinding cannot be implemented. Each call to bind creates a ssh key on the
+// spot, without storing it
 func (b *GiteaServiceBroker) GetBinding(ctx context.Context, instanceID, bindingID string) (brokerapi.GetBindingSpec, error) {
 	spec := brokerapi.GetBindingSpec{}
-
-	instanceSecret, err := b.getInstanceSecret(ctx, instanceID)
-	if err != nil {
-		return spec, err
-	}
-
-	bindingSecret, err := b.getBindingSecret(ctx, bindingID)
-	if err != nil {
-		return spec, err
-	}
-
-	if err = b.validateBindingInstanceRelationship(instanceSecret, bindingSecret); err != nil {
-		return spec, err
-	}
-
-	key, err := b._getDeployKey(ctx, instanceSecret, bindingSecret)
-	if err != nil {
-		if err == brokerapi.ErrBindingNotFound {
-			return spec, err
-		}
-		if err == brokerapi.ErrBindingAlreadyExists {
-			return spec, brokerapi.ErrBindingNotFound
-		}
-		return spec, errors.New("couldn't get existing binding")
-	}
-
-	spec.Credentials = map[string]string{
-		"public_key": key.Key,
-	}
-	spec.Parameters = map[string]string{
-		"title": key.Title,
-	}
-
-	return spec, nil
+	return spec, ErrNotImplemented
 }
 
 // Unbind deletes a Gitea DeployKey

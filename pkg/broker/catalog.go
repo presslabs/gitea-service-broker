@@ -55,11 +55,13 @@ func (giteaServiceBroker *GiteaServiceBroker) repoPlans() []brokerapi.ServicePla
 func (giteaServiceBroker *GiteaServiceBroker) Services(ctx context.Context) ([]brokerapi.Service, error) {
 	return []brokerapi.Service{
 		{
-			ID:          options.ServiceID,
-			Name:        options.ServiceName,
-			Description: fmt.Sprintf("Creates git repositories on Gitea at %s", options.GiteaURL),
-			Bindable:    true,
-			Plans:       giteaServiceBroker.repoPlans(),
+			ID:                  options.ServiceID,
+			Name:                options.ServiceName,
+			Description:         fmt.Sprintf("Creates git repositories on Gitea at %s", options.GiteaURL),
+			Bindable:            true,
+			BindingsRetrievable: false,
+			PlanUpdatable:       false,
+			Plans:               giteaServiceBroker.repoPlans(),
 			Metadata: &brokerapi.ServiceMetadata{
 				DisplayName: "Git Repository",
 			},
