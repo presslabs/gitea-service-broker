@@ -146,24 +146,20 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	asyncAllowed bool) (brokerapi.Binding, error) {
 	binding := brokerapi.Binding{}
 
-	instanceSecret, err := b.getInstanceSecret(ctx, instanceID)
+	repository, err := b.getInstance(ctx, instanceID)
 	if err != nil {
 		return binding, err
-	}
-
-	_, _, err = getRepositoryIdentity(instanceSecret)
-	if err != nil {
-		return binding, ErrInstanceNotFound
 	}
 
 	// get and validate the binding parameters
 	parameters := BindingParameters{}
-	err = json.Unmarshal(details.GetRawParameters(), &parameters)
-	if err != nil {
-		return binding, err
-	}
 
-	title := bindingID
+	if rawParameters := details.GetRawParameters(); len(rawParameters) > 0 {
+		err = json.Unmarshal(rawParameters, &parameters)
+		if err != nil {
+			return binding, err
+		}
+	}
 
 	privateRSAKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
@@ -196,9 +192,10 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	}
 
 	binding.Credentials = map[string]string{
-		"id_rsa":     privateRSAKeyPEM,
-		"id_rsa.pub": publicKeyOpenSSH,
-		"clone_url":  repository.CloneURL,
+		"id_rsa":         privateRSAKeyPEM,
+		"id_rsa.pub":     publicKeyOpenSSH,
+		"clone_http_url": repository.CloneURL,
+		"clone_ssh_url":  repository.SSHURL,
 	}
 
 	return binding, nil
@@ -320,7 +317,7 @@ func (b *GiteaServiceBroker) _getDeployKey(ctx context.Context, instanceSecret, 
 			return nil, ErrInstanceNotFound
 		}
 
-		log.V(2).Info("couldn't list repo deploy keys", "response", err.Error(), "user", user, "repo", repo)
+		log.V(1).Info("couldn't list repo deploy keys", "response", err.Error(), "user", user, "repo", repo)
 		return nil, err
 	}
 
@@ -368,9 +365,13 @@ func (b *GiteaServiceBroker) getInstance(ctx context.Context, instanceID string)
 	return nil, errors.New("couldn't get instance")
 }
 
-func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID, bindingID string,
-	instanceSecret *corev1.Secret, publicKey, keyTitle string) (*giteasdk.DeployKey, error) {
-	user, name, err := getRepositoryIdentity(instanceSecret)
+func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID, bindingID, publicKey string, readOnlyKey bool) (*giteasdk.DeployKey, error) {
+	instanceSecret, err := b.getInstanceSecret(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	owner, name, err := getRepositoryIdentity(instanceSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +384,6 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 
 	data := map[string][]byte{
 		"instance_id": []byte(instanceID),
-		"title":       []byte(keyTitle),
 		"public_key":  []byte(publicKey),
 		"fingerprint": []byte(fingerprint),
 	}
@@ -415,9 +415,10 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 	}
 
 	// create the deploy key
-	key, err := b.GiteaClient.CreateDeployKey(user, name, giteasdk.CreateKeyOption{
-		Title: keyTitle,
-		Key:   publicKey,
+	key, err := b.GiteaClient.CreateDeployKey(owner, name, giteasdk.CreateKeyOption{
+		Title:    bindingID,
+		Key:      publicKey,
+		ReadOnly: readOnlyKey,
 	})
 	if err != nil {
 		return nil, err
