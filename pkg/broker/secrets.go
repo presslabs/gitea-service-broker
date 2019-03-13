@@ -21,22 +21,22 @@ func getBindingKeyName(bindingID string) string {
 	return fmt.Sprintf("gsb-binding-%s", bindingID)
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getBindingKey(bindingID string) client.ObjectKey {
+func (giteaServiceBroker *giteaServiceBroker) getBindingKey(bindingID string) client.ObjectKey {
 	return client.ObjectKey{Name: getBindingKeyName(bindingID), Namespace: options.Namespace}
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getInstanceKey(instanceID string) client.ObjectKey {
+func (giteaServiceBroker *giteaServiceBroker) getInstanceKey(instanceID string) client.ObjectKey {
 	return client.ObjectKey{Name: getInstanceKeyName(instanceID), Namespace: options.Namespace}
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getInstanceSecret(ctx context.Context, instanceID string) (*corev1.Secret, error) {
+func (giteaServiceBroker *giteaServiceBroker) getInstanceSecret(ctx context.Context, instanceID string) (*corev1.Secret, error) {
 	instanceSecret := &corev1.Secret{}
 	key := giteaServiceBroker.getInstanceKey(instanceID)
 
 	err := giteaServiceBroker.Client.Get(ctx, key, instanceSecret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, ErrInstanceNotFound
+			return nil, errInstanceNotFound
 		}
 
 		return nil, errors.New("couldn't fetch instance")
@@ -44,7 +44,7 @@ func (giteaServiceBroker *GiteaServiceBroker) getInstanceSecret(ctx context.Cont
 	return instanceSecret, nil
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getBindingSecret(ctx context.Context, bindingID string) (*corev1.Secret, error) {
+func (giteaServiceBroker *giteaServiceBroker) getBindingSecret(ctx context.Context, bindingID string) (*corev1.Secret, error) {
 	bindingSecret := &corev1.Secret{}
 	key := giteaServiceBroker.getBindingKey(bindingID)
 
@@ -59,7 +59,7 @@ func (giteaServiceBroker *GiteaServiceBroker) getBindingSecret(ctx context.Conte
 	return bindingSecret, nil
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getOrCreateInstanceSecret(ctx context.Context, instanceID string, secret *corev1.Secret) (bool, error) {
+func (giteaServiceBroker *giteaServiceBroker) getOrCreateInstanceSecret(ctx context.Context, instanceID string, secret *corev1.Secret) (bool, error) {
 	secret.Labels = map[string]string{
 		"app.kubernetes.io/component": "service-instance",
 	}
@@ -73,7 +73,7 @@ func (giteaServiceBroker *GiteaServiceBroker) getOrCreateInstanceSecret(ctx cont
 	return created, err
 }
 
-func (giteaServiceBroker *GiteaServiceBroker) getOrCreateBindingSecret(ctx context.Context, bindingID string, secret *corev1.Secret) (bool, error) {
+func (giteaServiceBroker *giteaServiceBroker) getOrCreateBindingSecret(ctx context.Context, bindingID string, secret *corev1.Secret) (bool, error) {
 	secret.Labels = map[string]string{
 		"app.kubernetes.io/component": "service-binding",
 	}
@@ -104,7 +104,7 @@ func getRepositoryIdentity(secret *corev1.Secret) (owner, name string, err error
 func getDeployKeyIdentity(instanceSecret, bindingSecret *corev1.Secret) (user, repo, fingerprint, title string,
 	err error) {
 	if user, repo, err = getRepositoryIdentity(instanceSecret); err != nil {
-		err = ErrInstanceNotFound
+		err = errInstanceNotFound
 		return
 	}
 

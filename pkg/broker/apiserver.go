@@ -19,14 +19,14 @@ import (
 
 var log = logf.Log.WithName("gitea-service-broker")
 
-type BrokerServer struct {
+type brokerServer struct {
 	// nolint: golint
 	HTTPServer *http.Server
 }
 
-func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager) *BrokerServer { // nolint: golint
+func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager) *brokerServer { // nolint: golint
 	h := brokerapi.New(
-		&GiteaServiceBroker{
+		&giteaServiceBroker{
 			Client:      mgr.GetClient(),
 			GiteaClient: giteaClient,
 		},
@@ -43,12 +43,12 @@ func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager)
 		Handler: h,
 	}
 
-	return &BrokerServer{
+	return &brokerServer{
 		HTTPServer: httpServer,
 	}
 }
 
-func ZapLogFormatter(_ io.Writer, params handlers.LogFormatterParams) {
+func zapLoggerFormatter(_ io.Writer, params handlers.LogFormatterParams) {
 	log.Info(params.URL.String(),
 		"status_code", params.StatusCode,
 		"size", params.Size,
@@ -56,10 +56,10 @@ func ZapLogFormatter(_ io.Writer, params handlers.LogFormatterParams) {
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
-	return handlers.CustomLoggingHandler(ioutil.Discard, next, ZapLogFormatter)
+	return handlers.CustomLoggingHandler(ioutil.Discard, next, zapLoggerFormatter)
 }
 
-func (s *BrokerServer) Start(stop <-chan struct{}) error { // nolint: golint
+func (s *brokerServer) Start(stop <-chan struct{}) error { // nolint: golint
 	errChan := make(chan error, 1)
 	go func() {
 		log.Info("Web Server listening", "address", s.HTTPServer.Addr)

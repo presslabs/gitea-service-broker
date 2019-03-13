@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,30 +30,42 @@ import (
 	"github.com/presslabs/gitea-service-broker/pkg/internal/vendors/gitea"
 )
 
+// ProvisionParameters contains the provision parameter fields
 type ProvisionParameters struct {
 	RepositoryName  string `json:"repository_name"`
 	RepositoryOwner string `json:"repository_owner"`
 	MigrateURL      string `json:"migrate_url,omitempty"`
 }
 
+// BindingParameters contains the binding parameter fields
 type BindingParameters struct {
 	ReadOnly bool `json:"read_only,omitempty"`
 }
 
-type GiteaServiceBroker struct {
+// BindingData contains the data required to create a binding
+type BindingData struct {
+	ReadOnly    bool   `json:"read_only"`
+	Fingerprint string `json:"fingerprint"`
+	PublicKey   string `json:"public_key"`
+	InstanceID  string `json:"instance_id"`
+	Title       string `json:"title"`
+}
+
+type giteaServiceBroker struct {
 	client.Client
 	GiteaClient gitea.Client
 }
 
 var (
-	ErrNotImplemented = brokerapi.NewFailureResponse(errors.New("not implemented"), http.StatusNotImplemented,
+	errNotImplemented = brokerapi.NewFailureResponse(errors.New("not implemented"), http.StatusNotImplemented,
 		"not-implemented")
-	ErrInstanceNotFound = brokerapi.NewFailureResponseBuilder(
+	errInstanceNotFound = brokerapi.NewFailureResponseBuilder(
 		errors.New("instance cannot be fetched"), http.StatusNotFound, "instance-not-found",
 	).Build()
 )
 
-func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, provisionDetails brokerapi.ProvisionDetails,
+// Provision implements Gitea service instance provisioning by creating a Repository
+func (b *giteaServiceBroker) Provision(ctx context.Context, instanceID string, provisionDetails brokerapi.ProvisionDetails,
 	asyncAllowed bool) (spec brokerapi.ProvisionedServiceSpec, err error) {
 	log.Info("provisioning instance")
 
@@ -91,7 +104,8 @@ func (b *GiteaServiceBroker) Provision(ctx context.Context, instanceID string, p
 	return spec, nil
 }
 
-func (b *GiteaServiceBroker) GetInstance(ctx context.Context, instanceID string) (brokerapi.GetInstanceDetailsSpec, error) {
+// GetInstance implements Gitea service instance fetching by returning a Repository
+func (b *giteaServiceBroker) GetInstance(ctx context.Context, instanceID string) (brokerapi.GetInstanceDetailsSpec, error) {
 	spec := brokerapi.GetInstanceDetailsSpec{}
 
 	repository, err := b.getInstance(ctx, instanceID)
@@ -106,13 +120,14 @@ func (b *GiteaServiceBroker) GetInstance(ctx context.Context, instanceID string)
 	return spec, nil
 }
 
-func (b *GiteaServiceBroker) Deprovision(ctx context.Context, instanceID string, details brokerapi.DeprovisionDetails, asyncAllowed bool) (
+// Deprovision implements Gitea service instance deprovisioning by deleting a Repository
+func (b *giteaServiceBroker) Deprovision(ctx context.Context, instanceID string, details brokerapi.DeprovisionDetails, asyncAllowed bool) (
 	brokerapi.DeprovisionServiceSpec, error) {
 	spec := brokerapi.DeprovisionServiceSpec{IsAsync: false}
 
 	secret, err := b.getInstanceSecret(ctx, instanceID)
 	if err != nil {
-		if err == ErrInstanceNotFound {
+		if err == errInstanceNotFound {
 			return spec, brokerapi.ErrInstanceDoesNotExist
 		}
 		return spec, err
@@ -142,7 +157,8 @@ func (b *GiteaServiceBroker) Deprovision(ctx context.Context, instanceID string,
 	return spec, nil
 }
 
-func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID string, details brokerapi.BindDetails,
+// Bind implements Gitea service instance binding by creating a Deploy Key
+func (b *giteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID string, details brokerapi.BindDetails,
 	asyncAllowed bool) (brokerapi.Binding, error) {
 	binding := brokerapi.Binding{}
 
@@ -157,6 +173,9 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	if rawParameters := details.GetRawParameters(); len(rawParameters) > 0 {
 		err = json.Unmarshal(rawParameters, &parameters)
 		if err != nil {
+			log.V(0).Info("couldn't unmarshal bind parameters",
+				"raw_parameters", rawParameters, "msg", err.Error())
+
 			return binding, err
 		}
 	}
@@ -201,20 +220,13 @@ func (b *GiteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	return binding, nil
 }
 
-// GetBinding cannot be implemented. Each call to bind creates a ssh key on the
-// spot, without storing it
-func (b *GiteaServiceBroker) GetBinding(ctx context.Context, instanceID, bindingID string) (brokerapi.GetBindingSpec, error) {
-	spec := brokerapi.GetBindingSpec{}
-	return spec, ErrNotImplemented
-}
-
-// Unbind deletes a Gitea DeployKey
-func (b *GiteaServiceBroker) Unbind(ctx context.Context, instanceID, bindingID string, details brokerapi.UnbindDetails, asyncAllowed bool) (brokerapi.UnbindSpec, error) {
+// Unbind implements Gitea service instance unbinding by deleting a Gitea DeployKey
+func (b *giteaServiceBroker) Unbind(ctx context.Context, instanceID, bindingID string, details brokerapi.UnbindDetails, asyncAllowed bool) (brokerapi.UnbindSpec, error) {
 	spec := brokerapi.UnbindSpec{}
 
 	instanceSecret, err := b.getInstanceSecret(ctx, instanceID)
 	if err != nil {
-		if err == ErrInstanceNotFound {
+		if err == errInstanceNotFound {
 			return spec, brokerapi.ErrBindingNotFound
 		}
 		return spec, err
@@ -232,70 +244,87 @@ func (b *GiteaServiceBroker) Unbind(ctx context.Context, instanceID, bindingID s
 		return spec, err
 	}
 
-	shouldDeleteKey := true
-	key, err := b._getDeployKey(ctx, instanceSecret, bindingSecret)
+	err = b.deleteDeployKey(ctx, instanceSecret, bindingSecret)
+	return spec, err
+}
+
+// GetBinding cannot be implemented. Each call to bind creates a ssh key on the spot, without storing it
+func (b *giteaServiceBroker) GetBinding(ctx context.Context, instanceID, bindingID string) (brokerapi.GetBindingSpec, error) {
+	spec := brokerapi.GetBindingSpec{}
+	return spec, errNotImplemented
+}
+
+// LastOperation cannot be implemented. Each operation is done synchronously and the result is not stored
+func (b *giteaServiceBroker) LastOperation(ctx context.Context, instanceID string, details brokerapi.PollDetails) (brokerapi.LastOperation, error) {
+	return brokerapi.LastOperation{}, errNotImplemented
+}
+
+// Update is not implemented as it is not in the scope of this project.
+func (b *giteaServiceBroker) Update(cxt context.Context, instanceID string, details brokerapi.UpdateDetails, asyncAllowed bool) (brokerapi.UpdateServiceSpec, error) {
+	return brokerapi.UpdateServiceSpec{}, errNotImplemented
+}
+
+// LastBindingOperation cannot be implemented. Each operation is done synchronously and the result is not stored
+func (b *giteaServiceBroker) LastBindingOperation(ctx context.Context, instanceID, bindingID string, details brokerapi.PollDetails) (brokerapi.LastOperation, error) {
+	return brokerapi.LastOperation{}, errNotImplemented
+}
+
+func (b *giteaServiceBroker) getDeployKeyAndShouldDelete(instanceSecret, bindingSecret *corev1.Secret) (*giteasdk.DeployKey, bool,
+	error) {
+	key, err := b._getDeployKey(instanceSecret, bindingSecret)
+	// If the deploy key was found
+	if err == nil {
+		return key, true, nil
+	}
+
+	// If the deploy key was not found or was different from the expected one
+	if err == errInstanceNotFound ||
+		err == brokerapi.ErrBindingNotFound ||
+		err == brokerapi.ErrBindingAlreadyExists {
+
+		return key, false, nil
+	}
+
+	// If the operation timeout didn't pass yet, we consider the operation is still ongoing
+	if time.Now().UTC().Sub(bindingSecret.GetCreationTimestamp().Time).Seconds() < options.OperationTimeout {
+		return nil, false, brokerapi.ErrConcurrentInstanceAccess
+	}
+
+	// If we got an unexpected error
+	return nil, false, err
+}
+
+func (b *giteaServiceBroker) deleteDeployKey(ctx context.Context, instanceSecret, bindingSecret *corev1.Secret) error {
+	key, shouldDeleteKey, err := b.getDeployKeyAndShouldDelete(instanceSecret, bindingSecret)
 	if err != nil {
-		// If the binding was not found or was different
-		if err == ErrInstanceNotFound ||
-			err == brokerapi.ErrBindingNotFound ||
-			err == brokerapi.ErrBindingAlreadyExists {
-			shouldDeleteKey = false
-		} else {
-			if time.Now().UTC().Sub(bindingSecret.GetCreationTimestamp().Time).Seconds() < options.OperationTimeout {
-				return spec, brokerapi.ErrConcurrentInstanceAccess
-			}
-			return spec, errors.New("couldn't deprovision instance")
-		}
+		log.Error(err, "couldn't unbind instance")
+		return errors.New("couldn't unbind instance")
 	}
 
 	if shouldDeleteKey {
-		owner, repoName, _, _, err := getDeployKeyIdentity(instanceSecret, bindingSecret)
-		if err != nil {
-			return spec, err
+		owner, repoName, _, _, idErr := getDeployKeyIdentity(instanceSecret, bindingSecret)
+		if idErr != nil {
+			return idErr
 		}
 
 		err = b.GiteaClient.DeleteDeployKey(owner, repoName, key.KeyID)
 
-		if err != nil {
-			if err.Error() != gitea.NotFoundError {
-				return spec, errors.New("couldn't deprovision instance")
-			}
+		if err != nil && err.Error() != gitea.NotFoundError {
+			log.Error(err, "couldn't unbind instance")
+			return errors.New("couldn't unbind instance")
 		}
 	}
 
 	err = b.Client.Delete(ctx, bindingSecret)
 	if err != nil {
-		return spec, errors.New("couldn't unbind instance")
+		log.Error(err, "couldn't unbind instance")
+		return errors.New("couldn't unbind instance")
 	}
 
-	return spec, nil
+	return nil
 }
 
-// nolint: golint
-func (b *GiteaServiceBroker) LastOperation(ctx context.Context, instanceID string, details brokerapi.PollDetails) (brokerapi.LastOperation, error) {
-	return brokerapi.LastOperation{}, ErrNotImplemented
-}
-
-// nolint: golint
-func (b *GiteaServiceBroker) Update(cxt context.Context, instanceID string, details brokerapi.UpdateDetails, asyncAllowed bool) (brokerapi.UpdateServiceSpec, error) {
-	return brokerapi.UpdateServiceSpec{}, ErrNotImplemented
-}
-
-// nolint: golint
-func (b *GiteaServiceBroker) LastBindingOperation(ctx context.Context, instanceID, bindingID string, details brokerapi.PollDetails) (brokerapi.LastOperation, error) {
-	return brokerapi.LastOperation{}, ErrNotImplemented
-}
-
-func (b *GiteaServiceBroker) _getRepository(ctx context.Context, Secret *corev1.Secret) (*giteasdk.Repository, error) {
-	user, name, err := getRepositoryIdentity(Secret)
-	if err != nil {
-		return nil, err
-	}
-
-	return b.GiteaClient.GetRepo(user, name)
-}
-
-func (b *GiteaServiceBroker) validateBindingInstanceRelationship(instanceSecret, bindingSecret *corev1.Secret) error {
+func (b *giteaServiceBroker) validateBindingInstanceRelationship(instanceSecret, bindingSecret *corev1.Secret) error {
 	if getInstanceKeyName(string(bindingSecret.Data["instance_id"])) != instanceSecret.GetName() {
 		return brokerapi.NewFailureResponse(
 			errors.New("binding doesn't correspond to given instance"), http.StatusBadRequest, "bad-request",
@@ -305,7 +334,7 @@ func (b *GiteaServiceBroker) validateBindingInstanceRelationship(instanceSecret,
 	return nil
 }
 
-func (b *GiteaServiceBroker) _getDeployKey(ctx context.Context, instanceSecret, bindingSecret *corev1.Secret) (*giteasdk.DeployKey, error) {
+func (b *giteaServiceBroker) _getDeployKey(instanceSecret, bindingSecret *corev1.Secret) (*giteasdk.DeployKey, error) {
 	user, repo, fingerprint, title, err := getDeployKeyIdentity(instanceSecret, bindingSecret)
 	if err != nil {
 		return nil, errors.New("unknown deploy key details")
@@ -314,7 +343,7 @@ func (b *GiteaServiceBroker) _getDeployKey(ctx context.Context, instanceSecret, 
 	deployKeys, err := b.GiteaClient.ListDeployKeys(user, repo)
 	if err != nil {
 		if err.Error() == gitea.NotFoundError {
-			return nil, ErrInstanceNotFound
+			return nil, errInstanceNotFound
 		}
 
 		log.V(1).Info("couldn't list repo deploy keys", "response", err.Error(), "user", user, "repo", repo)
@@ -332,7 +361,7 @@ func (b *GiteaServiceBroker) _getDeployKey(ctx context.Context, instanceSecret, 
 	return nil, brokerapi.ErrBindingNotFound
 }
 
-func (b *GiteaServiceBroker) getInstance(ctx context.Context, instanceID string) (*giteasdk.Repository, error) {
+func (b *giteaServiceBroker) getInstance(ctx context.Context, instanceID string) (*giteasdk.Repository, error) {
 	secret := &corev1.Secret{}
 	key := b.getInstanceKey(instanceID)
 
@@ -340,38 +369,38 @@ func (b *GiteaServiceBroker) getInstance(ctx context.Context, instanceID string)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.V(1).Info("secret not found", "instance_id", instanceID, "secret", key)
-			return nil, ErrInstanceNotFound
+			return nil, errInstanceNotFound
 		}
 		log.Error(err, "couldn't get secret", "instance_id", instanceID, "secret", key)
 		return nil, errors.New("couldn't get instance")
 	}
 
-	repo, err := b._getRepository(ctx, secret)
+	user, name, err := getRepositoryIdentity(secret)
+	if err != nil {
+		return nil, err
+	}
 
+	repo, err := b.GiteaClient.GetRepo(user, name)
 	if err == nil {
 		return repo, nil
 	}
 
-	_, name, idErr := getRepositoryIdentity(secret)
-	if idErr != nil {
-		return nil, ErrInstanceNotFound
-	}
-
 	if err.Error() == gitea.NotFoundError {
 		log.V(1).Info("repository not found", "instance_id", instanceID, "repository_name", name)
-		return nil, ErrInstanceNotFound
+		return nil, errInstanceNotFound
 	}
 	log.Error(err, "couldn't get repository", "instance_id", instanceID, "repository_name", name)
 	return nil, errors.New("couldn't get instance")
 }
 
-func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID, bindingID, publicKey string, readOnlyKey bool) (*giteasdk.DeployKey, error) {
+func (b *giteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID, bindingID, publicKey string, readOnlyKey bool) (*giteasdk.DeployKey, error) {
 	instanceSecret, err := b.getInstanceSecret(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 
-	owner, name, err := getRepositoryIdentity(instanceSecret)
+	// validate the instance identity secret before computing public key fingerprint
+	_, _, err = getRepositoryIdentity(instanceSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -381,13 +410,34 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 		return nil, err
 	}
 	fingerprint = fmt.Sprintf("SHA256:%s", fingerprint)
-
-	data := map[string][]byte{
-		"instance_id": []byte(instanceID),
-		"public_key":  []byte(publicKey),
-		"fingerprint": []byte(fingerprint),
+	data := BindingData{
+		InstanceID:  instanceID,
+		PublicKey:   publicKey,
+		Fingerprint: fingerprint,
+		ReadOnly:    readOnlyKey,
+		Title:       bindingID,
 	}
-	bindingSecret := &corev1.Secret{Data: data}
+
+	return b.getOrCreateDeployKey(ctx, instanceSecret, bindingID, data)
+}
+
+func bindingDataToSecretData(data BindingData) map[string][]byte {
+	secretData := map[string][]byte{
+		"instance_id": []byte(data.InstanceID),
+		"public_key":  []byte(data.PublicKey),
+		"fingerprint": []byte(data.Fingerprint),
+		"read_only":   []byte(strconv.FormatBool(data.ReadOnly)),
+		"title":       []byte(data.Title),
+	}
+
+	return secretData
+}
+
+func (b *giteaServiceBroker) getOrCreateDeployKey(ctx context.Context, validInstanceSecret *corev1.Secret,
+	bindingID string, data BindingData) (*giteasdk.DeployKey, error) {
+	secretData := bindingDataToSecretData(data)
+	bindingSecret := &corev1.Secret{Data: secretData}
+
 	bindingSecretCreated, err := b.getOrCreateBindingSecret(ctx, bindingID, bindingSecret)
 	if err != nil {
 		return nil, errors.New("couldn't create binding")
@@ -395,39 +445,39 @@ func (b *GiteaServiceBroker) getOrCreateBinding(ctx context.Context, instanceID,
 
 	// the binding already existed
 	if !bindingSecretCreated {
-		// compare given parameters to existing binding parameters
-		for key, param := range data {
-			if !bytes.Equal(bindingSecret.Data[key], param) {
+		// compare expected parameters to existing binding parameters
+		for param, expectedValue := range secretData {
+			foundValue := bindingSecret.Data[param]
+			if !bytes.Equal(expectedValue, foundValue) {
+				log.V(0).Info("found unmatching binding secret param",
+					"param", param, "expected_value", string(expectedValue), "found_value", string(foundValue))
 				return nil, brokerapi.ErrBindingAlreadyExists
 			}
 		}
 
-		//
-		key, err := b._getDeployKey(ctx, instanceSecret, bindingSecret)
-		if err == nil {
+		// get existing deploy key
+		key, keyErr := b._getDeployKey(validInstanceSecret, bindingSecret)
+		if keyErr == nil {
 			return key, nil
-		} else if err == ErrInstanceNotFound ||
-			err == brokerapi.ErrBindingNotFound ||
-			err == brokerapi.ErrBindingAlreadyExists {
-			return nil, err
+		} else if keyErr == errInstanceNotFound ||
+			keyErr == brokerapi.ErrBindingNotFound ||
+			keyErr == brokerapi.ErrBindingAlreadyExists {
+			return nil, keyErr
 		}
 		return nil, errors.New("couldn't get existing binding")
 	}
 
-	// create the deploy key
-	key, err := b.GiteaClient.CreateDeployKey(owner, name, giteasdk.CreateKeyOption{
-		Title:    bindingID,
-		Key:      publicKey,
-		ReadOnly: readOnlyKey,
-	})
-	if err != nil {
-		return nil, err
-	}
+	owner, name, _ := getRepositoryIdentity(validInstanceSecret)
 
-	return key, nil
+	// create the deploy key
+	return b.GiteaClient.CreateDeployKey(owner, name, giteasdk.CreateKeyOption{
+		Title:    data.Title,
+		Key:      string(data.PublicKey),
+		ReadOnly: data.ReadOnly,
+	})
 }
 
-func (b *GiteaServiceBroker) provisionInstance(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
+func (b *giteaServiceBroker) provisionInstance(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
 	data := map[string][]byte{
 		"repository_owner": []byte(params.RepositoryOwner),
 		"repository_name":  []byte(params.RepositoryName),
@@ -478,27 +528,26 @@ func (b *GiteaServiceBroker) provisionInstance(ctx context.Context, instanceID s
 	}
 
 	// the repository needs to be created
-	return b.createInstance(ctx, instanceID, params)
+	return b.createInstance(instanceID, params)
 }
 
-func (b *GiteaServiceBroker) createInstance(ctx context.Context, instanceID string, params ProvisionParameters) (repository *giteasdk.Repository, err error) {
+func (b *giteaServiceBroker) createInstance(instanceID string, params ProvisionParameters) (repository *giteasdk.Repository, err error) {
 	if params.MigrateURL != "" {
-		return b.migrateRepo(ctx, instanceID, params)
-	} else {
-		log.Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
-		repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
-			Name:    params.RepositoryName,
-			Private: true,
-		})
-		if err != nil {
-			log.Error(err, "couldn't provision repository", "instance_id", instanceID)
-			return nil, errors.New("couldn't provision repository")
-		}
+		return b.migrateRepo(params)
+	}
+	log.Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
+	repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
+		Name:    params.RepositoryName,
+		Private: true,
+	})
+	if err != nil {
+		log.Error(err, "couldn't provision repository", "instance_id", instanceID)
+		return nil, errors.New("couldn't provision repository")
 	}
 	return repository, nil
 }
 
-func (b *GiteaServiceBroker) migrateRepo(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
+func (b *giteaServiceBroker) migrateRepo(params ProvisionParameters) (*giteasdk.Repository, error) {
 	// Get repo owner / organization ID
 	giteaOrg, err := b.GiteaClient.GetOrg(params.RepositoryOwner)
 	if err != nil {

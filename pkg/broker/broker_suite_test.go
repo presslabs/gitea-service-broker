@@ -56,7 +56,7 @@ var _ = AfterSuite(func() {
 	t.Stop()
 })
 
-func SetupAPIServer(giteaClient gitea.Client, mgr manager.Manager) *BrokerServer {
+func SetupAPIServer(giteaClient gitea.Client, mgr manager.Manager) *brokerServer {
 	httpPort, _, err := addr.Suggest()
 	Expect(err).To(Succeed())
 

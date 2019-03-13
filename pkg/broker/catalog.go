@@ -20,14 +20,14 @@ var reflector = jsonschema.Reflector{
 var repoJSONSchemaBytes, _ = json.Marshal(reflector.Reflect(&ProvisionParameters{}))
 var deployKeyJSONSchemaBytes, _ = json.Marshal(reflector.Reflect(&BindingParameters{}))
 
-func (giteaServiceBroker *GiteaServiceBroker) repoPlans() []brokerapi.ServicePlan {
+func (giteaServiceBroker *giteaServiceBroker) repoPlans() []brokerapi.ServicePlan {
 	plans := make([]brokerapi.ServicePlan, 1)
 
 	repoSchema := brokerapi.Schema{}
-	json.Unmarshal(repoJSONSchemaBytes, &repoSchema.Parameters)
+	_ = json.Unmarshal(repoJSONSchemaBytes, &repoSchema.Parameters)
 
 	deployKeySchema := brokerapi.Schema{}
-	json.Unmarshal(deployKeyJSONSchemaBytes, &deployKeySchema.Parameters)
+	_ = json.Unmarshal(deployKeyJSONSchemaBytes, &deployKeySchema.Parameters)
 
 	plans[0] = brokerapi.ServicePlan{
 		ID:          options.DefaultPlanID,
@@ -52,7 +52,7 @@ func (giteaServiceBroker *GiteaServiceBroker) repoPlans() []brokerapi.ServicePla
 }
 
 // Services returns a list of brokered services
-func (giteaServiceBroker *GiteaServiceBroker) Services(ctx context.Context) ([]brokerapi.Service, error) {
+func (giteaServiceBroker *giteaServiceBroker) Services(ctx context.Context) ([]brokerapi.Service, error) {
 	return []brokerapi.Service{
 		{
 			ID:                  options.ServiceID,
