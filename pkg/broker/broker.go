@@ -472,7 +472,7 @@ func (b *giteaServiceBroker) getOrCreateDeployKey(ctx context.Context, validInst
 	// create the deploy key
 	return b.GiteaClient.CreateDeployKey(owner, name, giteasdk.CreateKeyOption{
 		Title:    data.Title,
-		Key:      string(data.PublicKey),
+		Key:      data.PublicKey,
 		ReadOnly: data.ReadOnly,
 	})
 }
