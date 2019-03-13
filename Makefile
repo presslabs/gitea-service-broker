@@ -1,12 +1,20 @@
-
 # Image URL to use all building/pushing image targets
-IMG              ?= controller:latest
+APP_VERSION      ?= $(shell git describe --abbrev=5 --dirty --tags --always)
+REGISTRY         := quay.io/presslabs
+IMAGE_NAME       := gitea-service-broker
+BUILD_TAG        := build
+IMAGE_TAGS       := $(APP_VERSION)
 BINDIR           ?= $(CURDIR)/bin
+CHARTDIR         ?= $(CURDIR)/charts/gitea-service-broker
 
-all: vendor manager
+GOOS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
+GOARCH ?= amd64
+
+PATH := $(BINDIR):$(PATH)
+SHELL := env 'PATH=$(PATH)' /bin/sh
 
 # Run tests
-test:
+test: generate manifests
 	$(BINDIR)/ginkgo \
 		--randomizeAllSpecs --randomizeSuites --failOnPending \
 		--cover --coverprofile cover.out --trace --race -v \
@@ -55,7 +63,19 @@ docker-build: vendor
 docker-push:
 	docker push ${IMG}
 
+.PHONY: lint
+lint:
+	$(BINDIR)/golangci-lint run ./pkg/... ./cmd/...
+
+.PHONY: chart
+chart:
+	yq w -i $(CHARTDIR)/Chart.yaml version "$(APP_VERSION)"
+	yq w -i $(CHARTDIR)/Chart.yaml appVersion "$(APP_VERSION)"
+	mv $(CHARTDIR)/values.yaml $(CHARTDIR)/_values.yaml
+	sed 's#$(REGISTRY)/$(IMAGE_NAME):latest#$(REGISTRY)/$(IMAGE_NAME):$(APP_VERSION)#g' $(CHARTDIR)/_values.yaml > $(CHARTDIR)/values.yaml
+	rm $(CHARTDIR)/_values.yaml
+
 dependencies:
 	test -d $(BINDIR) || mkdir $(BINDIR)
-	GOBIN=$(BINDIR) go get github.com/onsi/ginkgo
-	GOBIN=$(BINDIR) go get github.com/onsi/gomega
+	GOBIN=$(BINDIR) go install ./vendor/github.com/onsi/ginkgo/ginkgo
+	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | bash -s -- -b $(BINDIR) v1.10.2

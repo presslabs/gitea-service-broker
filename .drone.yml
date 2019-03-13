@@ -1,0 +1,82 @@
+workspace:
+  base: /root/go
+  path: src/github.com/presslabs/gitea-service-broker
+
+clone:
+  git:
+    image: plugins/git
+    depth: 100
+    tags: true
+
+pipeline:
+  dependencies:
+    pull: true
+    image: quay.io/presslabs/bfc:latest
+    commands:
+      - make dependencies
+
+  verify-generate:
+    image: quay.io/presslabs/bfc:latest
+    commands:
+      - make fmt generate manifests
+      - git diff --exit-code
+
+  lint:
+    image: quay.io/presslabs/bfc:latest
+    commands:
+      - make lint
+      - helm lint charts/gitea-service-broker
+
+  test:
+    group: test
+    image: quay.io/presslabs/bfc:latest
+    commands:
+      - make test
+
+  build-chart:
+    group: build
+    image: quay.io/presslabs/bfc:latest
+    commands:
+      - make chart
+
+  publish:
+    group: publish
+    image: plugins/docker
+    registry: quay.io
+    repo: quay.io/presslabs/gitea-service-broker
+    tags: [ "latest" ]
+    username: presslabs+drone
+    secrets:
+      - source: QUAY_TOKEN
+        target: DOCKER_PASSWORD
+    when:
+      branch: master
+      event: push
+
+  publish:
+    group: publish
+    image: plugins/docker
+    registry: quay.io
+    repo: quay.io/presslabs/gitea-service-broker
+    tags: [ "${DRONE_TAG}" ]
+    username: presslabs+drone
+    secrets:
+      - source: QUAY_TOKEN
+        target: DOCKER_PASSWORD
+    when:
+      event: tag
+
+  publish-chart:
+    group: publish
+    image: quay.io/presslabs/bfc:latest
+    environment:
+      - GH_USER=presslabs-bot
+    commands:
+      - cd charts
+      - helm package gitea-service-broker
+      - CHART="$(basename *.tgz)" ; MESSAGE="Publish $(basename $CHART .tgz)"
+      - /usr/local/bin/gh put --skip-existing -m "$MESSAGE" "$CHART" "presslabs/charts/docs/"
+    secrets:
+      - GH_PASSWORD
+    when:
+      event: tag

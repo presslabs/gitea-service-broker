@@ -1,7 +1,7 @@
 required = [
     "sigs.k8s.io/controller-tools/cmd/controller-gen", # for crd/rbac generation
     "k8s.io/code-generator/cmd/deepcopy-gen", # for go generate
-    "github.com/onsi/ginkgo", # for test framework
+    "github.com/onsi/ginkgo/ginkgo", # for test framework
     "github.com/onsi/gomega", # for test matchers
 ]
 

@@ -26,8 +26,9 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	logf "github.com/presslabs/controller-util/log"
 	"sigs.k8s.io/testing_frameworks/integration/addr"
+
+	logf "github.com/presslabs/controller-util/log"
 
 	"github.com/presslabs/gitea-service-broker/pkg/internal/vendors/gitea"
 )
