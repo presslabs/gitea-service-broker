@@ -5,6 +5,8 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/pivotal-cf/brokerapi"
+	"github.com/pivotal-cf/brokerapi/auth"
+	"github.com/pivotal-cf/brokerapi/middlewares/originating_identity_header"
 	logf "github.com/presslabs/controller-util/log"
 	"github.com/presslabs/controller-util/log/adapters/lager"
 	"go.uber.org/zap"
@@ -25,22 +27,32 @@ type brokerServer struct {
 }
 
 func NewBrokerServer(addr string, giteaClient gitea.Client, mgr manager.Manager) *brokerServer { // nolint: golint
-	h := brokerapi.New(
-		&giteaServiceBroker{
-			Client:      mgr.GetClient(),
-			GiteaClient: giteaClient,
-		},
-		lager.NewZapAdapter("gitea-service-broker", zap.L()),
-		brokerapi.BrokerCredentials{
-			Username: options.Username,
-			Password: options.Password,
-		},
-	)
-	h.(*mux.Router).Use(loggingMiddleware)
+	r := mux.NewRouter()
+
+	r.Path("/healthz").Methods("GET").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r.Use(loggingMiddleware)
+
+	// s is used for the broker API
+	s := r.PathPrefix("/").Subrouter()
+	serviceBroker := &giteaServiceBroker{
+		Client:      mgr.GetClient(),
+		GiteaClient: giteaClient,
+	}
+	logger := lager.NewZapAdapter("gitea-service-broker", zap.L())
+	brokerapi.AttachRoutes(s, serviceBroker, logger)
+	brokerCredentials := brokerapi.BrokerCredentials{
+		Username: options.Username,
+		Password: options.Password,
+	}
+	authMiddleware := auth.NewWrapper(brokerCredentials.Username, brokerCredentials.Password).Wrap
+	s.Use(authMiddleware)
+	s.Use(originating_identity_header.AddToContext)
 
 	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: h,
+		Handler: r,
 	}
 
 	return &brokerServer{
