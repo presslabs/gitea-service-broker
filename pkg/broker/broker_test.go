@@ -687,4 +687,16 @@ var _ = Describe("Gitea Service Broker", func() {
 			})
 		})
 	})
+	When("hitting the healthcheck endpoint", func() {
+		BeforeEach(func() {
+			var err error
+			request, err = http.NewRequest("GET", "/healthz", bytes.NewBuffer([]byte("")))
+			Expect(err).To(Succeed())
+		})
+		It("returns a successful response", func() {
+			server.Handler.ServeHTTP(recorder, request)
+
+			Expect(recorder.Code).To(Equal(http.StatusOK), recorder.Body.String())
+		})
+	})
 })
