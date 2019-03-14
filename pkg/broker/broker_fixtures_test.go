@@ -1,8 +1,10 @@
 package broker
 
 import (
+	"errors"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/presslabs/gitea-service-broker/pkg/cmd/options"
 
 	giteasdk "code.gitea.io/sdk/gitea"
 )
@@ -62,10 +64,42 @@ func listDeployKeysNotFoundCall(user string, repoName string) ([]*giteasdk.Deplo
 	}, nil
 }
 
+func createRepoCall(owner string, opt giteasdk.CreateRepoOption) (*giteasdk.Repository, error) {
+	defer GinkgoRecover()
+	Expect(opt.Name).To(Equal(repo.Name))
+	Expect(owner).To(Equal(repo.Owner.UserName))
+
+	return repo, nil
+}
+
+func createRepoCallOrgDoesNotExist(owner string, opt giteasdk.CreateRepoOption) (*giteasdk.Repository, error) {
+	defer GinkgoRecover()
+	Expect(opt.Name).To(Equal(repo.Name))
+	Expect(owner).To(Equal(repo.Owner.UserName))
+
+	return nil, errors.New("404 Not Found")
+}
+
 func getRepoCall(owner string, name string) (*giteasdk.Repository, error) {
 	defer GinkgoRecover()
 	Expect(owner).To(Equal(repo.Owner.UserName))
 	Expect(name).To(Equal(repo.Name))
 
 	return repo, nil
+}
+
+func createOrgCall(user string, opt giteasdk.CreateOrgOption) (*giteasdk.Organization, error) {
+	defer GinkgoRecover()
+	Expect(user).To(Equal(options.GiteaAdminUsername))
+	Expect(opt.UserName).To(Equal(repo.Owner.UserName))
+
+	return &giteasdk.Organization{UserName: repo.Owner.UserName}, nil
+}
+
+func createOrgCallOrgAlreadyExists(user string, opt giteasdk.CreateOrgOption) (*giteasdk.Organization, error) {
+	defer GinkgoRecover()
+	Expect(user).To(Equal(options.GiteaAdminUsername))
+	Expect(opt.UserName).To(Equal(repo.Owner.UserName))
+
+	return nil, errors.New("409 Conflict")
 }

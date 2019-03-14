@@ -2,8 +2,11 @@ package gitea
 
 import giteasdk "code.gitea.io/sdk/gitea"
 
-// NotFoundError is the error message returned in response body by Gitea API for 404
+// NotFoundError is the error message returned by GiteaSDK for 404 responses
 const NotFoundError = "404 Not Found"
+
+// RepoAlreadyExistsError is the error message returned by GiteaSDK for 404 responses
+const RepoAlreadyExistsError = "409 Conflict"
 
 // Client is an interface to Gitea that allows us to test easier
 type Client interface {
