@@ -32,10 +32,19 @@ import (
 
 // ProvisionParameters contains the provision parameter fields
 type ProvisionParameters struct {
-	RepositoryName  string `json:"repository_name"`
-	RepositoryOwner string `json:"repository_owner"`
-	MigrateURL      string `json:"migrate_url,omitempty"`
+	RepositoryName     string             `json:"repository_name"`
+	RepositoryOwner    string             `json:"repository_owner"`
+	MigrateURL         string             `json:"migrate_url,omitempty"`
+	OrganizationPolicy organizationPolicy `json:"organization_policy,omitempty"`
 }
+
+type organizationPolicy string
+
+const (
+	organizationPolicyCreate      organizationPolicy = "create"
+	organizationPolicyUseExisting organizationPolicy = "use-existing"
+	defaultOrganizationPolicy                        = organizationPolicyCreate
+)
 
 // BindingParameters contains the binding parameter fields
 type BindingParameters struct {
@@ -70,7 +79,7 @@ func (b *giteaServiceBroker) Provision(ctx context.Context, instanceID string, p
 	log.Info("provisioning instance")
 
 	// Get the provision parameters
-	parameters := ProvisionParameters{}
+	parameters := ProvisionParameters{OrganizationPolicy: defaultOrganizationPolicy}
 	err = json.Unmarshal(provisionDetails.GetRawParameters(), &parameters)
 	if err != nil {
 		return spec, err
@@ -479,36 +488,39 @@ func (b *giteaServiceBroker) getOrCreateDeployKey(ctx context.Context, validInst
 
 func (b *giteaServiceBroker) provisionInstance(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
 	data := map[string][]byte{
-		"repository_owner": []byte(params.RepositoryOwner),
-		"repository_name":  []byte(params.RepositoryName),
-		"migrate_url":      []byte(params.MigrateURL),
+		"repository_owner":    []byte(params.RepositoryOwner),
+		"repository_name":     []byte(params.RepositoryName),
+		"migrate_url":         []byte(params.MigrateURL),
+		"organization_policy": []byte(params.OrganizationPolicy),
 	}
 
-	Secret := &corev1.Secret{Data: data}
+	secret := &corev1.Secret{Data: data}
 
-	SecretCreated, err := b.getOrCreateInstanceSecret(ctx, instanceID, Secret)
+	secretCreated, err := b.getOrCreateInstanceSecret(ctx, instanceID, secret)
 	if err != nil {
 		return nil, errors.New("couldn't provision instance")
 	}
 
-	// the Secret existed already, so let's try and retrieve the repository
-	if !SecretCreated {
-		SecretKey, err := client.ObjectKeyFromObject(Secret)
+	// the secret existed already, so let's try and retrieve the repository
+	if !secretCreated {
+		SecretKey, err := client.ObjectKeyFromObject(secret)
 		if err != nil {
 			return nil, errors.New("couldn't get repository identity")
 		}
 
-		log.Info("instance Secret already existed", "instance_id", instanceID, "Secret", SecretKey)
+		log.Info("instance secret already existed", "instance_id", instanceID, "secret", SecretKey)
 
-		user, name, err := getRepositoryIdentity(Secret)
+		user, name, err := getRepositoryIdentity(secret)
 		if err != nil {
 			return nil, errors.New("couldn't get repository identity")
 		}
 
 		// compare given parameters to existing instance parameters
-		for key, param := range data {
-			if !bytes.Equal(Secret.Data[key], param) {
-				log.Info("received parameters were different from existing instance parameters")
+		for param, expectedValue := range data {
+			foundValue := secret.Data[param]
+			if !bytes.Equal(secret.Data[param], expectedValue) {
+				log.V(0).Info("found unmatching binding secret param",
+					"param", param, "expected_value", string(expectedValue), "found_value", string(foundValue))
 				return nil, brokerapi.ErrInstanceAlreadyExists
 			}
 		}
@@ -521,8 +533,8 @@ func (b *giteaServiceBroker) provisionInstance(ctx context.Context, instanceID s
 
 			return nil, errors.New("couldn't get existing instance")
 		} else {
-			log.Error(err, "found provisioned Secret, but no repository",
-				"instance_id", instanceID, "secret", SecretKey, "repository_name", Secret.Data["repository_name"])
+			log.Error(err, "found provisioned secret, but no repository",
+				"instance_id", instanceID, "secret", SecretKey, "repository_name", secret.Data["repository_name"])
 			// provisioning is done below
 		}
 	}
@@ -535,13 +547,36 @@ func (b *giteaServiceBroker) createInstance(instanceID string, params ProvisionP
 	if params.MigrateURL != "" {
 		return b.migrateRepo(params)
 	}
+	if params.OrganizationPolicy == organizationPolicyCreate {
+		_, err = b.GiteaClient.AdminCreateOrg(options.GiteaAdminUsername, giteasdk.CreateOrgOption{
+			UserName: params.RepositoryOwner,
+		})
+		if err != nil && err.Error() != gitea.RepoAlreadyExistsError {
+			log.Error(err, "couldn't create organization", "instance_id", instanceID, "organization_name", params.RepositoryOwner)
+
+			return nil, errors.New("couldn't create organization")
+		}
+	}
+
 	log.Info("creating repository", "repository_name", params.RepositoryName, "repository_owner", params.RepositoryOwner)
 	repository, err = b.GiteaClient.AdminCreateRepo(params.RepositoryOwner, giteasdk.CreateRepoOption{
 		Name:    params.RepositoryName,
 		Private: true,
 	})
 	if err != nil {
+		if err.Error() == gitea.NotFoundError {
+			returnErr := errors.New("organization does not exist")
+
+			if params.OrganizationPolicy != organizationPolicyUseExisting {
+				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
+				returnErr = errors.New("couldn't provision repository")
+			}
+
+			return nil, brokerapi.NewFailureResponse(returnErr, http.StatusBadRequest,
+				"bad-request")
+		}
 		log.Error(err, "couldn't provision repository", "instance_id", instanceID)
+
 		return nil, errors.New("couldn't provision repository")
 	}
 	return repository, nil

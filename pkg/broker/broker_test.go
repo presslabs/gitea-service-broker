@@ -111,9 +111,10 @@ var _ = Describe("Gitea Service Broker", func() {
 				Namespace: instanceSecretKey.Namespace,
 			},
 			Data: map[string][]byte{
-				"repository_owner": []byte(repo.Owner.UserName),
-				"repository_name":  []byte(repo.Name),
-				"migrate_url":      []byte(""),
+				"repository_owner":    []byte(repo.Owner.UserName),
+				"repository_name":     []byte(repo.Name),
+				"migrate_url":         []byte(""),
+				"organization_policy": []byte("create"),
 			},
 		})
 		Expect(err).To(Succeed())
@@ -196,56 +197,115 @@ var _ = Describe("Gitea Service Broker", func() {
 
 	When("provisioning an instance", func() {
 		var (
-			err            error
-			body           map[string]interface{}
-			apiURL         string
-			createRepoCall func(string, giteasdk.CreateRepoOption) (*giteasdk.Repository, error)
+			err    error
+			body   map[string]interface{}
+			apiURL string
 		)
 		BeforeEach(func() {
 			body = map[string]interface{}{
 				"service_id": options.ServiceID,
 				"plan_id":    options.DefaultPlanID,
 				"parameters": map[string]string{
-					"repository_name":  repo.Name,
-					"repository_owner": repo.Owner.UserName,
+					"repository_name":     repo.Name,
+					"repository_owner":    repo.Owner.UserName,
+					"organization_policy": "create",
 				},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s", instanceID)
 			request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
 			Expect(err).To(Succeed())
-
-			createRepoCall = func(owner string, opt giteasdk.CreateRepoOption) (*giteasdk.Repository, error) {
-				defer GinkgoRecover()
-				Expect(opt.Name).To(Equal(repo.Name))
-				Expect(owner).To(Equal(repo.Owner.UserName))
-
-				return repo, nil
-			}
 		})
 		Context("and instance ID hasn't been used before", func() {
-			BeforeEach(func() {
-				giteaFakeClient.AdminCreateRepoExpectedCalls = append(
-					giteaFakeClient.AdminCreateRepoExpectedCalls, createRepoCall,
-				)
+			Context("and organization_policy is create", func() {
+				BeforeEach(func() {
+					giteaFakeClient.AdminCreateRepoExpectedCalls = append(
+						giteaFakeClient.AdminCreateRepoExpectedCalls, createRepoCall,
+					)
+					giteaFakeClient.AdminCreateOrgExpectedCalls = append(
+						giteaFakeClient.AdminCreateOrgExpectedCalls, createOrgCall,
+					)
+				})
+
+				It("returns successful response", func() {
+					server.Handler.ServeHTTP(recorder, request)
+
+					Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
+				})
+				It("creates instance secret", func() {
+					server.Handler.ServeHTTP(recorder, request)
+
+					instanceSecret := &corev1.Secret{}
+					err := c.Get(context.TODO(), instanceSecretKey, instanceSecret)
+					Expect(err).To(Succeed())
+					Expect(instanceSecret.Labels["app.kubernetes.io/component"]).To(Equal("service-instance"))
+				})
 			})
 
-			It("returns successful response", func() {
-				server.Handler.ServeHTTP(recorder, request)
+			Context("and organization_policy is use-existing", func() {
+				BeforeEach(func() {
+					params := body["parameters"].(map[string]string)
+					params["organization_policy"] = "use-existing"
+					body["parameters"] = params
 
-				Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
-			})
-			It("creates instance secret", func() {
-				server.Handler.ServeHTTP(recorder, request)
+					request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
+					Expect(err).To(Succeed())
+				})
+				Context("and organization doesn't exist", func() {
+					BeforeEach(func() {
+						giteaFakeClient.AdminCreateRepoExpectedCalls = append(
+							giteaFakeClient.AdminCreateRepoExpectedCalls, createRepoCallOrgDoesNotExist,
+						)
+					})
+					It("returns an error", func() {
+						server.Handler.ServeHTTP(recorder, request)
 
-				instanceSecret := &corev1.Secret{}
-				err := c.Get(context.TODO(), instanceSecretKey, instanceSecret)
-				Expect(err).To(Succeed())
-				Expect(instanceSecret.Labels["app.kubernetes.io/component"]).To(Equal("service-instance"))
+						Expect(recorder.Code).To(Equal(http.StatusBadRequest), recorder.Body.String())
+						response := &map[string]string{}
+						err := json.Unmarshal(recorder.Body.Bytes(), response)
+						Expect(err).To(Succeed())
+						Expect(response).To(Equal(&map[string]string{
+							"description": "organization does not exist",
+						}))
+					})
+					It("doesn't create a secret", func() {
+						secrets := &corev1.SecretList{}
+
+						err = c.List(context.TODO(), &client.ListOptions{LabelSelector: secretsSelector}, secrets)
+						Expect(err).To(Succeed())
+
+						Expect(secrets.Items).To(BeEmpty())
+					})
+				})
+				Context("and organization exists", func() {
+					BeforeEach(func() {
+						giteaFakeClient.AdminCreateRepoExpectedCalls = append(
+							giteaFakeClient.AdminCreateRepoExpectedCalls, createRepoCall,
+						)
+					})
+					It("returns successful response", func() {
+						server.Handler.ServeHTTP(recorder, request)
+
+						Expect(recorder.Code).To(Equal(http.StatusCreated), recorder.Body.String())
+					})
+					It("creates instance secret", func() {
+						server.Handler.ServeHTTP(recorder, request)
+
+						instanceSecret := &corev1.Secret{}
+						err := c.Get(context.TODO(), instanceSecretKey, instanceSecret)
+						Expect(err).To(Succeed())
+						Expect(instanceSecret.Labels["app.kubernetes.io/component"]).To(Equal("service-instance"))
+					})
+				})
 			})
 		})
 
 		Context("and instance ID has been used before", func() {
 			BeforeEach(createInstanceSecret)
+			BeforeEach(func() {
+				giteaFakeClient.AdminCreateOrgExpectedCalls = append(
+					giteaFakeClient.AdminCreateOrgExpectedCalls, createOrgCallOrgAlreadyExists,
+				)
+			})
 
 			Context("and there is an existing valid instance", func() {
 				Context("with the same params", func() {
