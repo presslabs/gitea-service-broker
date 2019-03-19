@@ -111,10 +111,9 @@ var _ = Describe("Gitea Service Broker", func() {
 				Namespace: instanceSecretKey.Namespace,
 			},
 			Data: map[string][]byte{
-				"repository_owner":    []byte(repo.Owner.UserName),
-				"repository_name":     []byte(repo.Name),
-				"migrate_url":         []byte(""),
-				"organization_policy": []byte("create"),
+				"repository_owner": []byte(repo.Owner.UserName),
+				"repository_name":  []byte(repo.Name),
+				"migrate_url":      []byte(""),
 			},
 		})
 		Expect(err).To(Succeed())
@@ -206,9 +205,8 @@ var _ = Describe("Gitea Service Broker", func() {
 				"service_id": options.ServiceID,
 				"plan_id":    options.DefaultPlanID,
 				"parameters": map[string]string{
-					"repository_name":     repo.Name,
-					"repository_owner":    repo.Owner.UserName,
-					"organization_policy": "create",
+					"repository_name":  repo.Name,
+					"repository_owner": repo.Owner.UserName,
 				},
 			}
 			apiURL = fmt.Sprintf("/v2/service_instances/%s", instanceID)
@@ -216,8 +214,10 @@ var _ = Describe("Gitea Service Broker", func() {
 			Expect(err).To(Succeed())
 		})
 		Context("and instance ID hasn't been used before", func() {
-			Context("and organization_policy is create", func() {
+			Context("and OrganizationPolicy is reuse-or-create", func() {
 				BeforeEach(func() {
+					options.OrganizationPolicy = options.OrgPolicyReuseOrCreate
+
 					giteaFakeClient.AdminCreateRepoExpectedCalls = append(
 						giteaFakeClient.AdminCreateRepoExpectedCalls, createRepoCall,
 					)
@@ -241,11 +241,9 @@ var _ = Describe("Gitea Service Broker", func() {
 				})
 			})
 
-			Context("and organization_policy is use-existing", func() {
+			Context("and OrganizationPolicy is reuse-or-fail", func() {
 				BeforeEach(func() {
-					params := body["parameters"].(map[string]string)
-					params["organization_policy"] = "use-existing"
-					body["parameters"] = params
+					options.OrganizationPolicy = options.OrgPolicyReuseOrFail
 
 					request, err = createAPIRequest(body, url.Values{}, apiURL, "PUT")
 					Expect(err).To(Succeed())

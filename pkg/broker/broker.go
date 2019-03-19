@@ -32,19 +32,10 @@ import (
 
 // ProvisionParameters contains the provision parameter fields
 type ProvisionParameters struct {
-	RepositoryName     string             `json:"repository_name"`
-	RepositoryOwner    string             `json:"repository_owner"`
-	MigrateURL         string             `json:"migrate_url,omitempty"`
-	OrganizationPolicy organizationPolicy `json:"organization_policy,omitempty"`
+	RepositoryName  string `json:"repository_name"`
+	RepositoryOwner string `json:"repository_owner"`
+	MigrateURL      string `json:"migrate_url,omitempty"`
 }
-
-type organizationPolicy string
-
-const (
-	organizationPolicyCreate      organizationPolicy = "create"
-	organizationPolicyUseExisting organizationPolicy = "use-existing"
-	defaultOrganizationPolicy                        = organizationPolicyCreate
-)
 
 // BindingParameters contains the binding parameter fields
 type BindingParameters struct {
@@ -79,7 +70,7 @@ func (b *giteaServiceBroker) Provision(ctx context.Context, instanceID string, p
 	log.Info("provisioning instance")
 
 	// Get the provision parameters
-	parameters := ProvisionParameters{OrganizationPolicy: defaultOrganizationPolicy}
+	parameters := ProvisionParameters{}
 	err = json.Unmarshal(provisionDetails.GetRawParameters(), &parameters)
 	if err != nil {
 		return spec, err
@@ -182,7 +173,7 @@ func (b *giteaServiceBroker) Bind(ctx context.Context, instanceID, bindingID str
 	if rawParameters := details.GetRawParameters(); len(rawParameters) > 0 {
 		err = json.Unmarshal(rawParameters, &parameters)
 		if err != nil {
-			log.V(0).Info("couldn't unmarshal bind parameters",
+			log.Info("couldn't unmarshal bind parameters",
 				"raw_parameters", rawParameters, "msg", err.Error())
 
 			return binding, err
@@ -458,7 +449,7 @@ func (b *giteaServiceBroker) getOrCreateDeployKey(ctx context.Context, validInst
 		for param, expectedValue := range secretData {
 			foundValue := bindingSecret.Data[param]
 			if !bytes.Equal(expectedValue, foundValue) {
-				log.V(0).Info("found unmatching binding secret param",
+				log.Info("found unmatching binding secret param",
 					"param", param, "expected_value", string(expectedValue), "found_value", string(foundValue))
 				return nil, brokerapi.ErrBindingAlreadyExists
 			}
@@ -488,10 +479,9 @@ func (b *giteaServiceBroker) getOrCreateDeployKey(ctx context.Context, validInst
 
 func (b *giteaServiceBroker) provisionInstance(ctx context.Context, instanceID string, params ProvisionParameters) (*giteasdk.Repository, error) {
 	data := map[string][]byte{
-		"repository_owner":    []byte(params.RepositoryOwner),
-		"repository_name":     []byte(params.RepositoryName),
-		"migrate_url":         []byte(params.MigrateURL),
-		"organization_policy": []byte(params.OrganizationPolicy),
+		"repository_owner": []byte(params.RepositoryOwner),
+		"repository_name":  []byte(params.RepositoryName),
+		"migrate_url":      []byte(params.MigrateURL),
 	}
 
 	secret := &corev1.Secret{Data: data}
@@ -519,7 +509,7 @@ func (b *giteaServiceBroker) provisionInstance(ctx context.Context, instanceID s
 		for param, expectedValue := range data {
 			foundValue := secret.Data[param]
 			if !bytes.Equal(secret.Data[param], expectedValue) {
-				log.V(0).Info("found unmatching binding secret param",
+				log.Info("found unmatching binding secret param",
 					"param", param, "expected_value", string(expectedValue), "found_value", string(foundValue))
 				return nil, brokerapi.ErrInstanceAlreadyExists
 			}
@@ -547,7 +537,7 @@ func (b *giteaServiceBroker) createInstance(instanceID string, params ProvisionP
 	if params.MigrateURL != "" {
 		return b.migrateRepo(params)
 	}
-	if params.OrganizationPolicy == organizationPolicyCreate {
+	if options.OrganizationPolicy == options.OrgPolicyReuseOrCreate {
 		_, err = b.GiteaClient.AdminCreateOrg(options.GiteaAdminUsername, giteasdk.CreateOrgOption{
 			UserName: params.RepositoryOwner,
 		})
@@ -567,7 +557,7 @@ func (b *giteaServiceBroker) createInstance(instanceID string, params ProvisionP
 		if err.Error() == gitea.NotFoundError {
 			returnErr := errors.New("organization does not exist")
 
-			if params.OrganizationPolicy != organizationPolicyUseExisting {
+			if options.OrganizationPolicy != options.OrgPolicyReuseOrFail {
 				log.Error(err, "couldn't provision repository", "instance_id", instanceID)
 				returnErr = errors.New("couldn't provision repository")
 			}
