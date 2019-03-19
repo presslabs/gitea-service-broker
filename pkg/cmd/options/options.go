@@ -2,10 +2,19 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+)
+
+const (
+	// OrgPolicyReuseOrCreate means that organizations can be reused if they exist,
+	// or else they are created as a side-effect
+	OrgPolicyReuseOrCreate string = "reuse-or-create"
+	// OrgPolicyReuseOrFail means that organizations can be reused if they exist, or else the operation fails
+	OrgPolicyReuseOrFail string = "reuse-or-fail"
 )
 
 var (
@@ -32,6 +41,8 @@ var (
 	// OperationTimeout is the number of seconds after which an operation that has not
 	// finished is considered failed
 	OperationTimeout = float64(61)
+	// OrganizationPolicy is the policy for handling organizations
+	OrganizationPolicy = OrgPolicyReuseOrFail
 )
 
 // AddToFlagSet add options to a FlagSet
@@ -47,7 +58,8 @@ func AddToFlagSet(flag *pflag.FlagSet) {
 	flag.String("gitea-admin-username", GiteaAdminUsername, "User to be used for Gitea admin operations")
 	flag.String("namespace", Namespace, "Namespace where objects such as secrets will be created")
 	flag.Float64("operation-timeout", OperationTimeout, "Number of seconds after which an unfinished operation is failed")
-
+	flag.String("organization-policy", OrganizationPolicy, fmt.Sprintf("The policy for handling organizations "+
+		"[%s|%s]", OrgPolicyReuseOrFail, OrgPolicyReuseOrCreate))
 }
 
 // LoadFromViper loads and validates the arguments
@@ -87,5 +99,11 @@ func LoadFromViper() error {
 	DefaultPlanName = viper.GetString("default-plan-name")
 	Namespace = viper.GetString("namespace")
 	OperationTimeout = viper.GetFloat64("operation-timeout")
+	OrganizationPolicy = viper.GetString("organization-policy")
+	if OrganizationPolicy != OrgPolicyReuseOrCreate &&
+		OrganizationPolicy != OrgPolicyReuseOrFail {
+		return fmt.Errorf("organization-policy must be one of: %s, %s",
+			OrgPolicyReuseOrCreate, OrgPolicyReuseOrFail)
+	}
 	return nil
 }
